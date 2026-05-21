@@ -464,30 +464,134 @@ const findDepartment = (id) => Store.state.departments.find((d) => d.id === id);
 const findUser = (id) => Store.state.users.find((u) => u.id === id);
 const findAgreement = (id) => Store.state.agreements.find((a) => a.id === id);
 
-/* ============================ Auth ======================================= */
+/* ============================ Auth (Supabase) ============================ */
+/*
+ * Authentication is backed by Supabase Auth (email + password, magic-link,
+ * and sign-up). Local user records in Store.state.users are kept so role,
+ * name, and avatar continue to drive UI; we match a Supabase session to a
+ * local user by email. Unmapped Supabase users get a minimal "Viewer" record
+ * so they can still sign in, but won't have admin privileges until an entry
+ * is added in User Management.
+ */
 
 const Auth = {
-  current: null,
+  current: null,        // { id, name, email, role, avatar }
+  supabaseUser: null,   // raw Supabase user object (for id, metadata)
+  _authSub: null,
 
-  init() {
-    try {
-      const raw = sessionStorage.getItem(SESSION_KEY);
-      if (raw) this.current = JSON.parse(raw);
-    } catch { /* ignore */ }
+  _client() {
+    return window.supabaseClient || null;
   },
 
-  login(email, password) {
-    const user = Store.state.users.find(
-      (u) => u.email.toLowerCase() === email.toLowerCase() && u.password === password && u.active,
-    );
-    if (!user) return { ok: false, error: 'Invalid email or password.' };
-    this.current = { id: user.id, name: user.name, email: user.email, role: user.role, avatar: user.avatar };
+  _hydrateFromSupabaseUser(supaUser) {
+    if (!supaUser) {
+      this.current = null;
+      this.supabaseUser = null;
+      sessionStorage.removeItem(SESSION_KEY);
+      return;
+    }
+    this.supabaseUser = supaUser;
+    const email = (supaUser.email || '').toLowerCase();
+    const local = Store.state.users.find((u) => (u.email || '').toLowerCase() === email);
+    if (local) {
+      this.current = {
+        id: local.id,
+        name: local.name,
+        email: local.email,
+        role: local.role,
+        avatar: local.avatar,
+      };
+    } else {
+      const meta = supaUser.user_metadata || {};
+      this.current = {
+        id: supaUser.id,
+        name: meta.name || meta.full_name || supaUser.email || 'New user',
+        email: supaUser.email,
+        role: 'Viewer',
+        avatar: '👤',
+      };
+    }
     sessionStorage.setItem(SESSION_KEY, JSON.stringify(this.current));
+  },
+
+  async init() {
+    const client = this._client();
+    if (!client) {
+      // No Supabase SDK — fall back to whatever we had in sessionStorage so the
+      // app at least renders. Login attempts will fail with a clear error.
+      try {
+        const raw = sessionStorage.getItem(SESSION_KEY);
+        if (raw) this.current = JSON.parse(raw);
+      } catch { /* ignore */ }
+      return;
+    }
+    try {
+      const { data } = await client.auth.getSession();
+      this._hydrateFromSupabaseUser(data && data.session ? data.session.user : null);
+    } catch (err) {
+      console.warn('[auth] getSession failed:', err);
+    }
+    // Re-render the current route whenever the auth state changes so guarded
+    // pages flip in/out as the session does.
+    if (this._authSub && this._authSub.subscription) {
+      this._authSub.subscription.unsubscribe();
+    }
+    this._authSub = client.auth.onAuthStateChange((_event, session) => {
+      this._hydrateFromSupabaseUser(session ? session.user : null);
+      if (window.Router && typeof Router.render === 'function') Router.render();
+    });
+  },
+
+  async login(email, password) {
+    const client = this._client();
+    if (!client) return { ok: false, error: 'Supabase is not configured. Edit js/supabase-client.js.' };
+    const { data, error } = await client.auth.signInWithPassword({ email, password });
+    if (error) return { ok: false, error: error.message || 'Invalid email or password.' };
+    this._hydrateFromSupabaseUser(data.user);
     return { ok: true };
   },
 
-  logout() {
+  async signUp(email, password, name) {
+    const client = this._client();
+    if (!client) return { ok: false, error: 'Supabase is not configured. Edit js/supabase-client.js.' };
+    const { data, error } = await client.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { name: name || '' },
+        emailRedirectTo: window.location.origin + window.location.pathname,
+      },
+    });
+    if (error) return { ok: false, error: error.message };
+    // If "Confirm email" is enabled in Supabase, session will be null here and
+    // the user must click the verification link before they can log in.
+    if (data.session) {
+      this._hydrateFromSupabaseUser(data.user);
+      return { ok: true, needsConfirmation: false };
+    }
+    return { ok: true, needsConfirmation: true };
+  },
+
+  async sendMagicLink(email) {
+    const client = this._client();
+    if (!client) return { ok: false, error: 'Supabase is not configured. Edit js/supabase-client.js.' };
+    const { error } = await client.auth.signInWithOtp({
+      email,
+      options: {
+        emailRedirectTo: window.location.origin + window.location.pathname,
+      },
+    });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  },
+
+  async logout() {
+    const client = this._client();
+    if (client) {
+      try { await client.auth.signOut(); } catch (err) { console.warn('[auth] signOut failed:', err); }
+    }
     this.current = null;
+    this.supabaseUser = null;
     sessionStorage.removeItem(SESSION_KEY);
     Router.go('/');
   },
@@ -1258,6 +1362,15 @@ function viewGuestAnalytics() {
 
 function viewLogin() {
   const app = $('#app');
+  const configWarning = !window.SUPABASE_CONFIGURED
+    ? `<div class="mb-4 text-xs text-amber-800 bg-amber-50 dark:bg-amber-500/10 dark:text-amber-200 border border-amber-200 dark:border-amber-500/30 rounded-lg px-3 py-2">
+         Supabase isn't configured yet. Set <code>SUPABASE_URL</code> and <code>SUPABASE_ANON_KEY</code> in <code>js/supabase-client.js</code>.
+       </div>`
+    : '';
+
+  const tabBtn = (mode, label) =>
+    `<button type="button" data-mode="${mode}" class="login-tab flex-1 h-9 text-xs font-semibold rounded-md transition data-[active=true]:bg-white data-[active=true]:dark:bg-slate-900 data-[active=true]:shadow data-[active=true]:text-slate-900 data-[active=true]:dark:text-white text-slate-500">${label}</button>`;
+
   app.innerHTML = `
     <div class="min-h-screen flex items-center justify-center px-4 hero-pattern">
       <div class="w-full max-w-md">
@@ -1271,46 +1384,155 @@ function viewLogin() {
           </div>
         </a>
         <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl p-7">
-          <h1 class="text-xl font-bold text-slate-900 dark:text-white">Welcome back</h1>
-          <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Sign in to manage Petra's partnership portfolio.</p>
-          <form id="login-form" class="mt-6 space-y-4">
+          ${configWarning}
+          <h1 id="login-title" class="text-xl font-bold text-slate-900 dark:text-white">Welcome back</h1>
+          <p id="login-subtitle" class="text-sm text-slate-500 dark:text-slate-400 mt-1">Sign in to manage Petra's partnership portfolio.</p>
+
+          <div class="mt-5 flex gap-1 p-1 rounded-lg bg-slate-100 dark:bg-slate-800">
+            ${tabBtn('password', 'Password')}
+            ${tabBtn('magic',    'Magic link')}
+            ${tabBtn('signup',   'Sign up')}
+          </div>
+
+          <form id="login-form" class="mt-5 space-y-4" novalidate>
+            <div id="field-name" class="hidden">
+              <label class="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Full name</label>
+              <input name="name" type="text" autocomplete="name" class="w-full h-11 px-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:bg-white dark:focus:bg-slate-900" />
+            </div>
             <div>
               <label class="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Email</label>
-              <input name="email" type="email" required autofocus value="admin@unicollab.edu" class="w-full h-11 px-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:bg-white dark:focus:bg-slate-900" />
+              <input name="email" type="email" required autofocus autocomplete="email" class="w-full h-11 px-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:bg-white dark:focus:bg-slate-900" />
             </div>
-            <div>
+            <div id="field-password">
               <label class="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Password</label>
-              <input name="password" type="password" required value="admin123" class="w-full h-11 px-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:bg-white dark:focus:bg-slate-900" />
+              <input name="password" type="password" autocomplete="current-password" class="w-full h-11 px-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:bg-white dark:focus:bg-slate-900" />
+              <p id="password-hint" class="hidden text-[11px] text-slate-500 mt-1">At least 6 characters.</p>
             </div>
-            <div id="login-error" class="hidden text-sm text-rose-600 bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/30 rounded-lg px-3 py-2"></div>
-            <button type="submit" class="w-full h-11 bg-brand-600 hover:bg-brand-700 text-white rounded-lg font-semibold text-sm flex items-center justify-center gap-2">
-              <i data-lucide="log-in" class="w-4 h-4"></i> Sign in
+
+            <div id="login-error"  class="hidden text-sm text-rose-600 bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/30 rounded-lg px-3 py-2"></div>
+            <div id="login-notice" class="hidden text-sm text-emerald-700 bg-emerald-50 dark:bg-emerald-500/10 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/30 rounded-lg px-3 py-2"></div>
+
+            <button id="login-submit" type="submit" class="w-full h-11 bg-brand-600 hover:bg-brand-700 disabled:bg-brand-600/60 disabled:cursor-not-allowed text-white rounded-lg font-semibold text-sm flex items-center justify-center gap-2">
+              <i data-lucide="log-in" class="w-4 h-4"></i> <span id="login-submit-label">Sign in</span>
             </button>
           </form>
-          <div class="mt-5 pt-5 border-t border-slate-200 dark:border-slate-800 text-xs text-slate-500 dark:text-slate-400 space-y-1">
-            <div class="font-semibold text-slate-700 dark:text-slate-300">Sign in with:</div>
-            <div>Admin · admin@unicollab.edu / admin123</div>
-            <div>Manager · budi@unicollab.edu / manager123</div>
-            <div>Staff · linda@unicollab.edu / staff123</div>
-          </div>
         </div>
         <div class="mt-4 text-center">
           <a href="#/" class="text-sm text-slate-500 hover:text-brand-600">← Back to public dashboard</a>
         </div>
       </div>
     </div>`;
-  $('#login-form').addEventListener('submit', (e) => {
+
+  let mode = 'password'; // 'password' | 'magic' | 'signup'
+  const els = {
+    form:          $('#login-form'),
+    tabs:          $$('.login-tab'),
+    title:         $('#login-title'),
+    subtitle:      $('#login-subtitle'),
+    fieldName:     $('#field-name'),
+    fieldPassword: $('#field-password'),
+    nameInput:     $('input[name="name"]', $('#login-form')),
+    passwordInput: $('input[name="password"]', $('#login-form')),
+    passwordHint:  $('#password-hint'),
+    error:         $('#login-error'),
+    notice:        $('#login-notice'),
+    submit:        $('#login-submit'),
+    submitLabel:   $('#login-submit-label'),
+  };
+
+  const setMode = (next) => {
+    mode = next;
+    els.tabs.forEach((b) => b.setAttribute('data-active', String(b.dataset.mode === next)));
+    els.error.classList.add('hidden');
+    els.notice.classList.add('hidden');
+    if (next === 'password') {
+      els.title.textContent = 'Welcome back';
+      els.subtitle.textContent = "Sign in to manage Petra's partnership portfolio.";
+      els.fieldName.classList.add('hidden');
+      els.fieldPassword.classList.remove('hidden');
+      els.passwordHint.classList.add('hidden');
+      els.passwordInput.setAttribute('autocomplete', 'current-password');
+      els.passwordInput.required = true;
+      els.nameInput.required = false;
+      els.submitLabel.textContent = 'Sign in';
+    } else if (next === 'magic') {
+      els.title.textContent = 'Sign in with a magic link';
+      els.subtitle.textContent = 'We will email you a one-time link to sign in.';
+      els.fieldName.classList.add('hidden');
+      els.fieldPassword.classList.add('hidden');
+      els.passwordInput.required = false;
+      els.nameInput.required = false;
+      els.submitLabel.textContent = 'Send magic link';
+    } else {
+      els.title.textContent = 'Create an account';
+      els.subtitle.textContent = 'Sign up with your email and a password.';
+      els.fieldName.classList.remove('hidden');
+      els.fieldPassword.classList.remove('hidden');
+      els.passwordHint.classList.remove('hidden');
+      els.passwordInput.setAttribute('autocomplete', 'new-password');
+      els.passwordInput.required = true;
+      els.nameInput.required = true;
+      els.submitLabel.textContent = 'Create account';
+    }
+    refreshIcons();
+  };
+
+  els.tabs.forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
+  setMode('password');
+
+  const showError = (msg) => {
+    els.notice.classList.add('hidden');
+    els.error.textContent = msg;
+    els.error.classList.remove('hidden');
+  };
+  const showNotice = (msg) => {
+    els.error.classList.add('hidden');
+    els.notice.textContent = msg;
+    els.notice.classList.remove('hidden');
+  };
+
+  els.form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
-    const result = Auth.login(fd.get('email'), fd.get('password'));
-    if (!result.ok) {
-      const err = $('#login-error');
-      err.textContent = result.error;
-      err.classList.remove('hidden');
-      return;
+    const email = String(fd.get('email') || '').trim();
+    const password = String(fd.get('password') || '');
+    const name = String(fd.get('name') || '').trim();
+
+    if (!email) return showError('Please enter your email.');
+
+    els.submit.disabled = true;
+    const prevLabel = els.submitLabel.textContent;
+    els.submitLabel.textContent = 'Please wait…';
+
+    try {
+      if (mode === 'password') {
+        if (!password) return showError('Please enter your password.');
+        const result = await Auth.login(email, password);
+        if (!result.ok) return showError(result.error);
+        Toast.show(`Welcome back, ${Auth.current.name.split(' ')[0]}!`, 'success');
+        Router.go('/admin');
+      } else if (mode === 'magic') {
+        const result = await Auth.sendMagicLink(email);
+        if (!result.ok) return showError(result.error);
+        showNotice(`We've emailed a sign-in link to ${email}. Open it on this device to finish signing in.`);
+      } else {
+        if (password.length < 6) return showError('Password must be at least 6 characters.');
+        const result = await Auth.signUp(email, password, name);
+        if (!result.ok) return showError(result.error);
+        if (result.needsConfirmation) {
+          showNotice(`Account created. Check ${email} for a confirmation link before signing in.`);
+        } else {
+          Toast.show(`Welcome, ${(Auth.current && Auth.current.name || 'there').split(' ')[0]}!`, 'success');
+          Router.go('/admin');
+        }
+      }
+    } catch (err) {
+      console.error('[auth] submit failed:', err);
+      showError(err && err.message ? err.message : 'Something went wrong. Please try again.');
+    } finally {
+      els.submit.disabled = false;
+      els.submitLabel.textContent = prevLabel;
     }
-    Toast.show(`Welcome back, ${Auth.current.name.split(' ')[0]}!`, 'success');
-    Router.go('/admin');
   });
 }
 
@@ -2822,7 +3044,7 @@ function renderBootError(err) {
     renderBootError(err);
     return;
   }
-  Auth.init();
+  await Auth.init();
   Theme.init();
   Router.init();
   // Lucide periodic refresh safety
