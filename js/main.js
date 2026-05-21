@@ -116,6 +116,9 @@ const stageProgress = (stage) => {
   };
   return lifecycleMap[stage] ?? 0;
 };
+// Exposed for js/agreements-repo.js so the row mapper can compute progress
+// without duplicating the table above.
+window.stageProgress = stageProgress;
 
 const pillClass = (status) => {
   const map = {
@@ -436,10 +439,26 @@ const Store = {
     this.save();
   },
 
-  // Load institutions/departments/agreements from /data and adapt to the
-  // dashboard's camelCase shape. Throws if any file is unreachable — the
-  // app requires the partnership database, no fallback dataset exists.
+  // Source of truth, in order of preference:
+  //   1. Supabase tables (institutions, departments, agreements), if
+  //      js/supabase-client.js is configured and reachable.
+  //   2. Local JSON files under /data — the original bundled dataset.
+  // The Supabase branch keeps the rest of the camelCase state (users,
+  // activityLogs, notifications, theme) seeded locally; only the three
+  // partnership tables are remote.
   async loadRealData() {
+    if (window.SUPABASE_CONFIGURED && window.AgreementsRepo) {
+      try {
+        const { institutions, departments, agreements } =
+          await window.AgreementsRepo.loadAll();
+        if (agreements.length > 0 || institutions.length > 0) {
+          return this.buildStateFromRemote({ institutions, departments, agreements });
+        }
+        console.warn('[Store] Supabase returned empty tables — falling back to data/*.json');
+      } catch (err) {
+        console.warn('[Store] Supabase load failed, falling back to data/*.json:', err);
+      }
+    }
     const fetchJson = async (path) => {
       const r = await fetch(path);
       if (!r.ok) throw new Error(`${path} → HTTP ${r.status}`);
@@ -451,6 +470,110 @@ const Store = {
       fetchJson('data/agreements.json'),
     ]);
     return this.buildStateFromSource(insts, depts, ags);
+  },
+
+  // Build the camelCase state from already-mapped remote records. Users,
+  // notifications, and activityLogs are derived locally — those tables
+  // live only in localStorage for now.
+  buildStateFromRemote({ institutions, departments, agreements }) {
+    const users = this.defaultUsers();
+    const activityLogs = agreements.map((ag) => ({
+      id: uid('log'),
+      agreementId: ag.id,
+      userId: users[0] && users[0].id,
+      action: 'CREATED',
+      message: `Agreement "${ag.title}" loaded`,
+      at: ag.startDate,
+    }));
+    activityLogs.sort((a, b) => new Date(b.at) - new Date(a.at));
+
+    const notifications = [];
+    agreements.forEach((ag) => {
+      const d = daysUntil(ag.endDate);
+      if (d !== null && d > 0 && d <= 60 && isLiveAgreement(ag.status)) {
+        notifications.push({
+          id: uid('n'),
+          type: 'expiration',
+          title: 'Agreement nearing expiration',
+          message: `"${ag.title}" expires in ${d} days.`,
+          agreementId: ag.id,
+          read: false,
+          at: new Date().toISOString(),
+        });
+      }
+    });
+    notifications.push({
+      id: uid('n'),
+      type: 'info',
+      title: 'Live data connected',
+      message: `${agreements.length} agreements loaded from Supabase.`,
+      read: false,
+      at: new Date().toISOString(),
+    });
+
+    return {
+      version: 3,
+      theme: 'light',
+      departments,
+      institutions,
+      users,
+      agreements,
+      notifications,
+      activityLogs,
+    };
+  },
+
+  // Apply a realtime event from the agreements table. Returns true if the
+  // local state actually changed (caller decides whether to re-render).
+  // When an INSERT/UPDATE arrives for a row we already had locally, we
+  // preserve client-only fields (statusHistory, files) that aren't yet
+  // mirrored to Postgres, so the round-trip from optimistic write doesn't
+  // wipe them.
+  applyAgreementEvent({ type, agreement }) {
+    if (!this.state || !Array.isArray(this.state.agreements)) return false;
+    const list = this.state.agreements;
+    const idx = list.findIndex((a) => a.id === agreement.id);
+    const mergeClientOnly = (incoming, existing) => {
+      if (!existing) return incoming;
+      return {
+        ...incoming,
+        statusHistory: existing.statusHistory && existing.statusHistory.length
+          ? existing.statusHistory
+          : (incoming.statusHistory || []),
+        files: existing.files && existing.files.length
+          ? existing.files
+          : (incoming.files || []),
+      };
+    };
+    if (type === 'INSERT' || type === 'UPDATE') {
+      const merged = mergeClientOnly(agreement, idx >= 0 ? list[idx] : null);
+      if (idx >= 0) list[idx] = merged; else list.unshift(merged);
+    } else if (type === 'DELETE') {
+      if (idx < 0) return false;
+      list.splice(idx, 1);
+    } else {
+      return false;
+    }
+    this.save();
+    return true;
+  },
+
+  // Subscribe to live changes on the agreements table. The current route
+  // is re-rendered whenever a row changes — except when the user is on a
+  // form (we don't want to wipe their unsaved input).
+  subscribeRealtime() {
+    if (!window.SUPABASE_CONFIGURED || !window.AgreementsRepo) return;
+    window.AgreementsRepo.subscribe({
+      onChange: (evt) => {
+        const changed = this.applyAgreementEvent(evt);
+        if (!changed) return;
+        const p = (window.Router && Router.current) || '';
+        const isForm = p.endsWith('/new') || p.endsWith('/edit');
+        if (!isForm && window.Router && typeof Router.render === 'function') {
+          Router.render();
+        }
+      },
+    });
   },
 
   buildStateFromSource(srcInstitutions, srcDepartments, srcAgreements) {
@@ -2149,6 +2272,12 @@ function viewAgreementList() {
           Store.state.agreements = Store.state.agreements.filter((x) => x.id !== id);
           Store.state.activityLogs = Store.state.activityLogs.filter((x) => x.agreementId !== id);
           Store.save();
+          if (window.SUPABASE_CONFIGURED && window.AgreementsRepo) {
+            window.AgreementsRepo.deleteAgreement(id).catch((err) => {
+              console.error('Remote delete failed:', err);
+              Toast.show('Saved locally, but failed to delete on server.', 'error');
+            });
+          }
           Toast.show('Agreement deleted.', 'success');
           render();
         }
@@ -2374,6 +2503,12 @@ function viewAgreementDetail({ id }) {
       Store.state.agreements = Store.state.agreements.filter((x) => x.id !== a.id);
       Store.state.activityLogs = Store.state.activityLogs.filter((x) => x.agreementId !== a.id);
       Store.save();
+      if (window.SUPABASE_CONFIGURED && window.AgreementsRepo) {
+        window.AgreementsRepo.deleteAgreement(a.id).catch((err) => {
+          console.error('Remote delete failed:', err);
+          Toast.show('Saved locally, but failed to delete on server.', 'error');
+        });
+      }
       Toast.show('Deleted.', 'success');
       Router.go('/admin/agreements');
     }
@@ -2443,6 +2578,12 @@ function advanceStage(agreementId) {
           Toast.show(`Auto-archived to Library`, 'success');
         }
         Store.save();
+        if (window.SUPABASE_CONFIGURED && window.AgreementsRepo) {
+          window.AgreementsRepo.updateAgreement(a.id, a).catch((err) => {
+            console.error('Remote status update failed:', err);
+            Toast.show('Saved locally, but failed to sync status.', 'error');
+          });
+        }
         Toast.show(`Status advanced to ${nextStage}.`, 'success');
         Router.render();
       }},
@@ -2699,6 +2840,12 @@ function viewAgreementForm({ id } = {}) {
         Store.state.activityLogs.unshift({ id: uid('log'), agreementId: a.id, userId: Auth.current.id, action: 'UPDATED', message: `Agreement "${a.title}" updated`, at: now });
       }
       Store.save();
+      if (window.SUPABASE_CONFIGURED && window.AgreementsRepo) {
+        window.AgreementsRepo.updateAgreement(a.id, a).catch((err) => {
+          console.error('Remote update failed:', err);
+          Toast.show('Saved locally, but failed to sync update to server.', 'error');
+        });
+      }
       Toast.show('Agreement updated.', 'success');
       Router.go(`/admin/agreements/${a.id}`);
     } else {
@@ -2717,6 +2864,12 @@ function viewAgreementForm({ id } = {}) {
       Store.state.agreements.unshift(newAg);
       Store.state.activityLogs.unshift({ id: uid('log'), agreementId: newAg.id, userId: Auth.current.id, action: 'CREATED', message: `Agreement "${newAg.title}" created`, at: now });
       Store.save();
+      if (window.SUPABASE_CONFIGURED && window.AgreementsRepo) {
+        window.AgreementsRepo.insertAgreement(newAg).catch((err) => {
+          console.error('Remote insert failed:', err);
+          Toast.show('Saved locally, but failed to sync new agreement to server.', 'error');
+        });
+      }
       Toast.show('Agreement created.', 'success');
       Router.go(`/admin/agreements/${newAg.id}`);
     }
@@ -3340,6 +3493,9 @@ function renderBootError(err) {
   await Auth.init();
   Theme.init();
   Router.init();
+  // Subscribe to Supabase realtime AFTER the router is up so re-renders
+  // triggered by remote events have a route to re-render.
+  Store.subscribeRealtime();
   // Lucide periodic refresh safety
   setTimeout(refreshIcons, 100);
 })();
