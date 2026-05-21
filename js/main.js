@@ -262,6 +262,125 @@ const Modal = {
   },
 };
 
+/* ============================ Combobox =================================== */
+// Searchable combobox with optional "Add new" affordance. Renders HTML; call
+// Combobox.init(rootEl, opts) after the form is mounted to wire up listeners.
+
+const Combobox = {
+  render({ name, value = '', required = false, placeholder = 'Search…' }) {
+    return `
+      <div class="combobox relative">
+        <input type="hidden" class="cb-value" name="${name}" value="${escapeHtml(value)}" ${required ? 'data-required="1"' : ''} />
+        <input type="text" autocomplete="off" class="cb-search w-full h-10 pl-3 pr-9 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm" placeholder="${escapeHtml(placeholder)}" />
+        <button type="button" class="cb-toggle absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600">
+          <i data-lucide="chevron-down" class="w-4 h-4"></i>
+        </button>
+        <div class="cb-panel hidden absolute z-30 mt-1 left-0 right-0 max-h-64 overflow-y-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg"></div>
+      </div>
+    `;
+  },
+
+  init(root, opts) {
+    const options = opts.options.slice();
+    const value = root.querySelector('.cb-value');
+    const search = root.querySelector('.cb-search');
+    const toggle = root.querySelector('.cb-toggle');
+    const panel = root.querySelector('.cb-panel');
+    let opened = false;
+
+    const labelFor = (id) => options.find((o) => o.id === id)?.label || '';
+
+    const select = (opt) => {
+      value.value = opt.id;
+      search.value = opt.label;
+      close();
+      opts.onSelect?.(opt);
+    };
+
+    const open = () => { opened = true; panel.classList.remove('hidden'); render(search.value); };
+    const close = () => { opened = false; panel.classList.add('hidden'); };
+
+    const render = (q = '') => {
+      const ql = q.toLowerCase().trim();
+      const matches = options.filter((o) => {
+        if (!ql) return true;
+        return o.label.toLowerCase().includes(ql) || (o.sublabel || '').toLowerCase().includes(ql);
+      }).slice(0, 100);
+
+      const items = matches.map((o) => `
+        <button type="button" data-id="${escapeHtml(o.id)}" class="cb-item w-full text-left px-3 py-2 hover:bg-slate-100 dark:hover:bg-slate-800 ${o.id === value.value ? 'bg-brand-50 dark:bg-brand-500/10' : ''}">
+          <div class="text-sm font-medium text-slate-800 dark:text-slate-200">${escapeHtml(o.label)}</div>
+          ${o.sublabel ? `<div class="text-xs text-slate-500">${escapeHtml(o.sublabel)}</div>` : ''}
+        </button>
+      `).join('');
+
+      const showAdd = opts.allowAdd && ql && !options.some((o) => o.label.toLowerCase() === ql);
+      const addRow = showAdd ? `
+        <button type="button" class="cb-add w-full text-left px-3 py-2 text-sm font-medium text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 border-t border-slate-200 dark:border-slate-700 flex items-center gap-2">
+          <i data-lucide="plus" class="w-4 h-4"></i>
+          <span>${escapeHtml(opts.addLabel || 'Add')} "<strong>${escapeHtml(search.value.trim())}</strong>"</span>
+        </button>` : '';
+
+      panel.innerHTML = matches.length
+        ? items + addRow
+        : `<div class="px-3 py-4 text-sm text-slate-500 text-center">${escapeHtml(opts.noMatch || 'No matches')}</div>${addRow}`;
+      refreshIcons();
+
+      panel.querySelectorAll('.cb-item').forEach((el) => {
+        el.addEventListener('click', () => {
+          const opt = options.find((o) => o.id === el.dataset.id);
+          if (opt) select(opt);
+        });
+      });
+      panel.querySelector('.cb-add')?.addEventListener('click', () => {
+        const name = search.value.trim();
+        opts.onAdd?.(name, (newOpt) => {
+          if (!newOpt) return;
+          options.unshift(newOpt);
+          select(newOpt);
+        });
+      });
+    };
+
+    search.addEventListener('focus', open);
+    search.addEventListener('input', () => { value.value = ''; render(search.value); });
+    search.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { close(); search.blur(); }
+    });
+    toggle.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (opened) close(); else { search.focus(); open(); }
+    });
+
+    const outside = (e) => {
+      if (!root.contains(e.target)) {
+        const lbl = labelFor(value.value);
+        if (search.value !== lbl) search.value = lbl;
+        close();
+      }
+    };
+    document.addEventListener('click', outside);
+    Router.onCleanup(() => document.removeEventListener('click', outside));
+
+    if (value.value) search.value = labelFor(value.value);
+  },
+};
+
+/* ============================ Time helpers =============================== */
+
+const formatElapsed = (ms) => {
+  if (!Number.isFinite(ms) || ms < 0) ms = 0;
+  const sec = Math.floor(ms / 1000);
+  const day = Math.floor(sec / 86400);
+  const hr = Math.floor((sec % 86400) / 3600);
+  const min = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  if (day > 0) return `${day}d ${hr}h ${min}m`;
+  if (hr > 0) return `${hr}h ${min}m ${s}s`;
+  if (min > 0) return `${min}m ${s}s`;
+  return `${s}s`;
+};
+
 /* ============================ Store / Database Loader ==================== */
 
 const Store = {
@@ -669,7 +788,12 @@ const Router = {
     return h;
   },
 
+  _cleanups: [],
+  onCleanup(fn) { this._cleanups.push(fn); },
+
   render() {
+    this._cleanups.forEach((fn) => { try { fn(); } catch (e) { /* ignore */ } });
+    this._cleanups = [];
     const path = this.parseHash();
     const match = this.match(path) || this.match('/404');
     this.current = path;
@@ -1666,6 +1790,16 @@ function viewAdminDashboard() {
   const recentActivity = Store.state.activityLogs.slice(0, 10);
   const myAgreements = ags.filter((a) => a.picUserId === Auth.current.id).slice(0, 5);
 
+  // In-process agreements: anything not yet signed/closed. The "stopwatch"
+  // counts from the first-contact moment so long-running negotiations are
+  // visible at a glance.
+  const inProcessAll = ags
+    .filter((a) => IN_PROGRESS_STATUSES.includes(a.status))
+    .map((a) => ({ a, anchor: a.contactDate || a.createdAt }))
+    .filter((row) => row.anchor)
+    .sort((x, y) => new Date(x.anchor) - new Date(y.anchor));
+  const inProcess = inProcessAll.slice(0, 15);
+
   const content = `
     <div class="flex items-center justify-between mb-6 flex-wrap gap-3">
       <div>
@@ -1740,6 +1874,41 @@ function viewAdminDashboard() {
     </div>
 
     ${UI.card({
+      title: 'In Process — Time Since First Contact',
+      subtitle: `${inProcessAll.length} agreement${inProcessAll.length === 1 ? '' : 's'} in the pipeline${inProcessAll.length > inProcess.length ? ` · showing oldest ${inProcess.length}` : ''}`,
+      body: inProcess.length ? `
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="text-left text-xs text-slate-500 border-b border-slate-200 dark:border-slate-800">
+              <tr>
+                <th class="py-2 pr-3 font-medium">Agreement</th>
+                <th class="py-2 px-3 font-medium">Partner</th>
+                <th class="py-2 px-3 font-medium">Status</th>
+                <th class="py-2 px-3 font-medium">Contacted</th>
+                <th class="py-2 pl-3 font-medium text-right">Elapsed</th>
+              </tr>
+            </thead>
+            <tbody id="adm-stopwatch-body">
+              ${inProcess.map(({ a, anchor }) => {
+                const inst = findInstitution(a.institutionId);
+                return `
+                  <tr class="row-hover border-b border-slate-100 dark:border-slate-800/60">
+                    <td class="py-2 pr-3">
+                      <a href="#/admin/agreements/${a.id}" class="font-medium text-slate-800 dark:text-slate-200 hover:text-brand-600 truncate block max-w-[260px]">${escapeHtml(a.title)}</a>
+                      <div class="text-xs font-mono text-slate-400">${escapeHtml(a.code)}</div>
+                    </td>
+                    <td class="py-2 px-3 text-slate-600 dark:text-slate-300 truncate max-w-[220px]">${escapeHtml(inst?.name || '—')}</td>
+                    <td class="py-2 px-3"><span class="pill ${pillClass(a.status)}">${escapeHtml(a.status)}</span></td>
+                    <td class="py-2 px-3 text-xs text-slate-500">${fmtDate(anchor)}</td>
+                    <td class="py-2 pl-3 text-right font-mono text-xs text-slate-700 dark:text-slate-200" data-stopwatch="${anchor}">…</td>
+                  </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>` : UI.empty({ icon: 'timer-off', title: 'Pipeline empty', message: 'No agreements are currently in process.' }),
+    })}
+
+    ${UI.card({
       title: 'Recent Activity',
       subtitle: 'Latest workflow updates across all agreements',
       body: recentActivity.length ? `<ol class="timeline-rail space-y-3">${recentActivity.map((log) => {
@@ -1765,6 +1934,18 @@ function viewAdminDashboard() {
     Charts.kindDonut('adm-kind');
   }, 30);
   $('[data-action="export"]')?.addEventListener('click', exportAgreementsCSV);
+
+  const tick = () => {
+    const now = Date.now();
+    $$('[data-stopwatch]').forEach((el) => {
+      const ts = new Date(el.dataset.stopwatch).getTime();
+      if (!Number.isFinite(ts)) return;
+      el.textContent = formatElapsed(now - ts);
+    });
+  };
+  tick();
+  const timerId = setInterval(tick, 1000);
+  Router.onCleanup(() => clearInterval(timerId));
 }
 
 /* ============================ Agreement List ============================= */
@@ -2280,14 +2461,18 @@ function viewAgreementForm({ id } = {}) {
   }
   const defaults = a || {
     code: '', title: '', type: 'MoU',
-    institutionId: Store.state.institutions[0]?.id || '',
-    departmentId: Store.state.departments[0]?.id || '',
+    institutionId: '',
+    departmentId: '',
     picUserId: Auth.current.id,
     status: 'Drafting',
+    contactDate: new Date().toISOString().slice(0, 10),
     startDate: new Date().toISOString().slice(0, 10),
     endDate: new Date(Date.now() + 365 * 24 * 3600 * 1000).toISOString().slice(0, 10),
     description: '', notes: '', tags: [],
   };
+  // Existing edits may predate contactDate — fall back to createdAt so the
+  // stopwatch on the dashboard has a sensible anchor.
+  const contactDateValue = defaults.contactDate || a?.createdAt || new Date().toISOString();
 
   const content = `
     <div class="flex items-center gap-2 mb-4 text-sm text-slate-500">
@@ -2319,15 +2504,21 @@ function viewAgreementForm({ id } = {}) {
               </div>
               <div>
                 <label class="block text-xs font-semibold mb-1.5">Partner Institution *</label>
-                <select name="institutionId" required class="w-full h-10 px-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm">
-                  ${Store.state.institutions.map((i) => `<option value="${i.id}" ${defaults.institutionId === i.id ? 'selected' : ''}>${escapeHtml(i.name)} — ${escapeHtml(i.country)}</option>`).join('')}
-                </select>
+                <div id="cb-institution">${Combobox.render({
+                  name: 'institutionId',
+                  value: defaults.institutionId,
+                  required: true,
+                  placeholder: 'Type to search or add a new institution…',
+                })}</div>
               </div>
               <div>
                 <label class="block text-xs font-semibold mb-1.5">Department / Faculty *</label>
-                <select name="departmentId" required class="w-full h-10 px-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm">
-                  ${Store.state.departments.map((d) => `<option value="${d.id}" ${defaults.departmentId === d.id ? 'selected' : ''}>${escapeHtml(d.name)}</option>`).join('')}
-                </select>
+                <div id="cb-department">${Combobox.render({
+                  name: 'departmentId',
+                  value: defaults.departmentId,
+                  required: true,
+                  placeholder: 'Type to search a department or faculty…',
+                })}</div>
               </div>
               <div>
                 <label class="block text-xs font-semibold mb-1.5">Person In Charge *</label>
@@ -2345,6 +2536,11 @@ function viewAgreementForm({ id } = {}) {
                     ${WORKFLOW_STAGES.map((s) => `<option value="${s}" ${defaults.status === s ? 'selected' : ''}>${s}</option>`).join('')}
                   </optgroup>
                 </select>
+              </div>
+              <div>
+                <label class="block text-xs font-semibold mb-1.5">Contact Date *</label>
+                <input type="date" name="contactDate" required value="${new Date(contactDateValue).toISOString().slice(0, 10)}" class="w-full h-10 px-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm" />
+                <p class="mt-1 text-[11px] text-slate-500">When this partner was first contacted — anchors the in-process timer.</p>
               </div>
               <div>
                 <label class="block text-xs font-semibold mb-1.5">Start Date *</label>
@@ -2396,11 +2592,89 @@ function viewAgreementForm({ id } = {}) {
   `;
   renderAdminLayout(content, isEdit ? '/admin/agreements' : '/admin/agreements/new');
 
+  // Partner Institution combobox — searchable + supports adding a brand-new
+  // institution inline via a small modal for country / kind.
+  Combobox.init($('#cb-institution'), {
+    options: Store.state.institutions.map((i) => ({
+      id: i.id, label: i.name, sublabel: i.country || (i.kind || ''),
+    })),
+    allowAdd: true,
+    addLabel: 'Add new institution',
+    noMatch: 'No institutions match — type a name to add a new one.',
+    onAdd: (name, done) => {
+      if (!name) return;
+      Modal.open({
+        title: 'Add new partner institution',
+        body: `
+          <div class="space-y-3">
+            <div>
+              <label class="block text-xs font-semibold mb-1.5">Name</label>
+              <input id="ni-name" value="${escapeHtml(name)}" class="w-full h-10 px-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm" />
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs font-semibold mb-1.5">Country</label>
+                <input id="ni-country" placeholder="e.g. Indonesia" class="w-full h-10 px-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm" />
+              </div>
+              <div>
+                <label class="block text-xs font-semibold mb-1.5">Kind</label>
+                <select id="ni-kind" class="w-full h-10 px-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm">
+                  <option value="Domestic">Domestic</option>
+                  <option value="International">International</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <label class="block text-xs font-semibold mb-1.5">Type</label>
+              <select id="ni-type" class="w-full h-10 px-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm">
+                ${INSTITUTION_TYPES.map((t) => `<option value="${t}">${titleCase(t)}</option>`).join('')}
+              </select>
+            </div>
+          </div>`,
+        actions: [
+          { label: 'Cancel', variant: 'secondary' },
+          { label: 'Add institution', variant: 'primary', onClick: () => {
+            const nm = $('#ni-name').value.trim();
+            const country = $('#ni-country').value.trim();
+            const kind = $('#ni-kind').value;
+            const itype = $('#ni-type').value;
+            if (!nm) { Toast.show('Institution name is required.', 'error'); return false; }
+            const inst = {
+              id: `inst-custom-${Date.now().toString(36)}`,
+              name: nm,
+              canonical_name: nm,
+              kind,
+              country: country || null,
+              city: null,
+              address: null,
+              institutionTypes: [itype],
+              institution_types: [itype],
+              type: titleCase(itype),
+            };
+            Store.state.institutions.push(inst);
+            Store.save();
+            Toast.show(`Added "${nm}" to the institution list.`, 'success');
+            done({ id: inst.id, label: inst.name, sublabel: inst.country || inst.kind });
+          } },
+        ],
+      });
+    },
+  });
+
+  Combobox.init($('#cb-department'), {
+    options: Store.state.departments.map((d) => ({
+      id: d.id, label: d.name, sublabel: d.isFaculty ? 'Faculty' : 'Department',
+    })),
+    noMatch: 'No departments or faculties match.',
+  });
+
   $('#ag-form').addEventListener('submit', (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
     const data = Object.fromEntries(fd.entries());
 
+    if (!data.institutionId) { Toast.show('Please choose or add a partner institution.', 'error'); return; }
+    if (!data.departmentId) { Toast.show('Please choose a department or faculty.', 'error'); return; }
     if (new Date(data.endDate) <= new Date(data.startDate)) {
       Toast.show('End date must be after start date.', 'error'); return;
     }
@@ -2411,6 +2685,7 @@ function viewAgreementForm({ id } = {}) {
       const prevStatus = a.status;
       Object.assign(a, {
         ...data, tags,
+        contactDate: new Date(data.contactDate).toISOString(),
         startDate: new Date(data.startDate).toISOString(),
         endDate: new Date(data.endDate).toISOString(),
         progress: stageProgress(data.status),
@@ -2430,6 +2705,7 @@ function viewAgreementForm({ id } = {}) {
       const code = data.code.trim() || `${data.type}-${new Date().getFullYear()}-${String(Store.state.agreements.length + 100).padStart(3, '0')}`;
       const newAg = {
         id: uid('ag'), code, ...data, tags,
+        contactDate: new Date(data.contactDate).toISOString(),
         startDate: new Date(data.startDate).toISOString(),
         endDate: new Date(data.endDate).toISOString(),
         signedDate: ARCHIVE_STATUSES.includes(data.status) ? now : null,
