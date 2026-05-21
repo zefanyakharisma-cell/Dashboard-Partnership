@@ -1,26 +1,42 @@
 {
   "today": "2026-05-21",
+  "source": "data/partnerships_1.json",
   "totals": {
-    "agreements": 1009,
-    "institutions": 706,
-    "departments": 40
+    "agreements": 2289,
+    "institutions": 1201,
+    "departments": 38,
+    "new_partners": 1130
   },
   "by_status": {
+    "Expired": 1101,
     "Active": 423,
     "Auto-renewed": 314,
-    "Pending Approval": 130,
-    "Unknown": 129,
-    "Ended": 10,
-    "Renewal In Progress": 3
+    "Unknown": 169,
+    "Pending Approval": 157,
+    "Ended": 74,
+    "Renewal In Progress": 51
   },
   "by_type": {
-    "MoU": 508,
-    "MoA": 356,
-    "Unknown": 41,
-    "IA": 104
+    "MoU": 1055,
+    "MoA": 1046,
+    "Unknown": 62,
+    "IA": 126
   },
   "by_kind": {
-    "Domestic": 625,
-    "International": 384
+    "Domestic": 1584,
+    "International": 705
+  },
+  "by_institution_type": {
+    "education": 1201,
+    "industry": 671,
+    "organization": 296,
+    "government": 102,
+    "foundation": 12
+  },
+  "by_scope": {
+    "learning": 684,
+    "research": 542,
+    "student_affairs": 469,
+    "community_service": 459
   }
 }

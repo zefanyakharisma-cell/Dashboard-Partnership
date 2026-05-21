@@ -1,11 +1,11 @@
 """
-Convert data/partnerships.source.json into a normalized multi-table layout
+Convert data/partnerships_1.json into a normalized multi-table layout
 matching the README schema, with deduped institutions and a derived status.
 
 Outputs to data/:
-  - institutions.json   (deduped by canonical key)
-  - departments.json    (derived from implementing_unit prefix)
-  - agreements.json     (FK to institution_id, department_id)
+  - institutions.json   (deduped by canonical key, with institution_type tags)
+  - departments.json    (derived from per-agreement `units` array)
+  - agreements.json     (FK to institution_id, department_id; preserves units/scope arrays)
   - meta.json           (counts, status breakdown, today date)
 
 Run: python3 scripts/convert_partnerships.py
@@ -16,11 +16,11 @@ from __future__ import annotations
 import json
 import re
 import unicodedata
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SRC = ROOT / "data" / "partnerships.source.json"
+SRC = ROOT / "data" / "partnerships_1.json"
 OUT_DIR = ROOT / "data"
 
 TODAY = date(2026, 5, 21)
@@ -38,7 +38,6 @@ def fix_mojibake(s: str) -> str:
         return s
     try:
         fixed = s.encode("latin-1").decode("utf-8")
-        # Only accept the fix if it looks like it reduced obvious mojibake.
         if "Ã" in s or "Â" in s or "â" in s or "Å" in s:
             return fixed
         return s
@@ -68,7 +67,6 @@ ISO_DATE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})")
 
 
 def parse_iso_date(value):
-    """Parse 'YYYY-MM-DD' or 'YYYY-MM-DD HH:MM:SS' into a date, or None."""
     if not value or not isinstance(value, str):
         return None
     m = ISO_DATE.match(value)
@@ -121,13 +119,8 @@ ENDED_PATTERNS = ("\nend", " end", "end.", "(end)")
 
 
 def derive_status(end_kind, end_date_val, renewal_date, note):
-    """Return one of:
-    Active | Expired | Auto-renewed | Open-ended | Pending Approval |
-    Renewal In Progress | Ended | Unknown
-    """
     note_l = (note or "").lower()
 
-    # Explicit overrides from notes
     if any(p in note_l for p in ENDED_PATTERNS) or note_l.startswith("end"):
         return "Ended"
     if "proses pembaruan" in note_l:
@@ -135,15 +128,10 @@ def derive_status(end_kind, end_date_val, renewal_date, note):
     if any(p in note_l for p in PENDING_PATTERNS):
         return "Pending Approval"
 
-    # Hard dates
     if end_kind == "date":
         return "Active" if end_date_val >= TODAY else "Expired"
 
-    # Auto-renewed: check renewal_info date if present
     if end_kind == "auto_renewed":
-        if renewal_date:
-            # Past renewal date with no manual override = still auto-renewing
-            return "Auto-renewed"
         return "Auto-renewed"
 
     if end_kind == "no_limit":
@@ -160,8 +148,6 @@ def derive_status(end_kind, end_date_val, renewal_date, note):
 # ---------------------------------------------------------------------------
 
 def derive_type(at):
-    """Source has booleans mou/moa/ia. Return primary type string.
-    If all three are false (a few records), fall back to scanning agenda."""
     if not at:
         return "Unknown"
     if at.get("mou"):
@@ -177,7 +163,6 @@ def derive_type(at):
 # Institution canonicalization
 # ---------------------------------------------------------------------------
 
-# Trailing location qualifiers that vary across rows for the same partner.
 TRAILING_LOCATIONS = (
     "indonesia", "japan", "korea", "china", "p. r. china", "p.r. china",
     "taiwan", "malaysia", "philippines", "philippine", "thailand", "uk",
@@ -206,16 +191,7 @@ LOCATION_SUFFIX_RE = re.compile(
 
 
 def canonical_institution_name(partner: str) -> str:
-    """Strip trailing location qualifiers and parenthetical suffixes used
-    only to distinguish faculties of the same partner. Keep faculty marker
-    in display name, but key dedup on the trimmed stem.
-
-    NOTE: we still keep faculty parentheticals as separate institutions
-    when they appear -- the same university with different faculties is
-    treated as multiple institutions to preserve the agreement scope.
-    """
     name = partner.strip()
-    # Repeatedly strip trailing ", <country>" tails
     prev = None
     while prev != name:
         prev = name
@@ -231,28 +207,58 @@ def institution_key(partner_clean: str, country_or_city: str | None) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Department derivation
+# Scope / units normalization (new partnerships_1 schema)
 # ---------------------------------------------------------------------------
 
-# Implementing units like "FBE-Hotel Management" -> department "FBE",
-# "Universitas" -> "Universitas", "Pusat Karir" -> "Pusat Karir", etc.
-
-FACULTY_PREFIXES = {
-    "FBE", "FTI", "FHIK", "FTSP", "FK", "FKG", "FKIP", "FBS", "FBE & FBS",
-    "FBS & FBE", "FBE-Hotel Management & ",  # safety; we strip below
+SCOPE_LABELS = {
+    "learning": "Learning",
+    "research": "Research",
+    "student_affairs": "Student Affairs",
+    "community_service": "Community Service",
 }
 
 
-def split_unit(implementing_unit: str | None):
-    if not implementing_unit:
-        return None, None
-    u = implementing_unit.strip()
-    # Normalise oddities like "FBE-Hotel Management & \nCreative Tourism"
-    u = re.sub(r"\s+", " ", u)
-    if "-" in u:
-        dept, _, program = u.partition("-")
-        return dept.strip(), program.strip()
-    return u, None
+def normalize_scope_array(scope):
+    """Old schema: scope was a faculty string. New schema: scope is an array
+    of category tags ('learning', 'research', ...). Return (tags_array, label_string).
+    """
+    if not scope:
+        return [], None
+    if isinstance(scope, str):
+        s = clean_str(scope)
+        return ([s] if s else []), s
+    tags = [clean_str(s) for s in scope if clean_str(s)]
+    label = ", ".join(SCOPE_LABELS.get(t, t.replace("_", " ").title()) for t in tags) or None
+    return tags, label
+
+
+def normalize_units(units):
+    if not units:
+        return []
+    if isinstance(units, str):
+        s = clean_str(units)
+        return [s] if s else []
+    return [clean_str(u) for u in units if clean_str(u)]
+
+
+def normalize_institution_types(itypes):
+    if not itypes:
+        return []
+    if isinstance(itypes, str):
+        s = clean_str(itypes)
+        return [s] if s else []
+    return [clean_str(t) for t in itypes if clean_str(t)]
+
+
+# Map institution_type tags to display names. The single dominant type
+# becomes the institution.type display label (the dashboard expects a string).
+INSTITUTION_TYPE_LABELS = {
+    "education": "Education",
+    "industry": "Industry",
+    "government": "Government",
+    "organization": "Organization",
+    "foundation": "Foundation",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -265,42 +271,46 @@ def convert():
     institutions: dict[str, dict] = {}
     departments: dict[str, dict] = {}
     agreements: list[dict] = []
+    # Track institution_type tags per institution for later aggregation.
+    inst_type_tags: dict[str, dict[str, int]] = {}
 
-    def get_or_create_institution(partner, country, kind, city=None, address=None):
+    def get_or_create_institution(partner, country, kind, city=None, address=None, itypes=None):
         partner_clean = clean_str(partner) or "Unknown"
         loc = country if kind == "International" else city
         key = institution_key(partner_clean, loc)
         if key in institutions:
             inst = institutions[key]
-            # Backfill missing fields if a later record has more detail
             if address and not inst.get("address"):
                 inst["address"] = clean_str(address)
             if city and not inst.get("city"):
                 inst["city"] = clean_str(city)
             if country and not inst.get("country"):
                 inst["country"] = clean_str(country)
+            for t in (itypes or []):
+                inst_type_tags[inst["id"]][t] = inst_type_tags[inst["id"]].get(t, 0) + 1
             return inst["id"]
         inst_id = f"inst-{len(institutions) + 1:04d}"
         institutions[key] = {
             "id": inst_id,
             "name": partner_clean,
             "canonical_name": canonical_institution_name(partner_clean),
-            "kind": kind,                       # 'International' | 'Domestic'
+            "kind": kind,
             "country": clean_str(country),
             "city": clean_str(city),
             "address": clean_str(address),
         }
+        inst_type_tags[inst_id] = {}
+        for t in (itypes or []):
+            inst_type_tags[inst_id][t] = inst_type_tags[inst_id].get(t, 0) + 1
         return inst_id
 
-    def get_or_create_department(implementing_unit, scope):
-        dept_short, program = split_unit(implementing_unit)
-        if not dept_short:
-            dept_short = "Unspecified"
-        key = dept_short.lower()
+    def get_or_create_department(unit_short):
+        if not unit_short:
+            unit_short = "Unspecified"
+        key = unit_short.lower()
         if key in departments:
             return departments[key]["id"]
-        dept_id = f"dept-{slugify(dept_short)[:24] or 'unspecified'}"
-        # Avoid collision when two short names slugify the same
+        dept_id = f"dept-{slugify(unit_short)[:32] or 'unspecified'}"
         suffix = 2
         base = dept_id
         while any(d["id"] == dept_id for d in departments.values()):
@@ -308,11 +318,9 @@ def convert():
             suffix += 1
         departments[key] = {
             "id": dept_id,
-            "short": dept_short,
-            "name": dept_short,
-            "is_faculty": dept_short.upper() in {
-                "FBE", "FTI", "FHIK", "FTSP", "FK", "FKG", "FKIP", "FBS",
-            },
+            "short": unit_short,
+            "name": unit_short,
+            "is_faculty": False,
         }
         return departments[key]["id"]
 
@@ -321,11 +329,20 @@ def convert():
         country = row.get("country") if kind == "International" else "Indonesia"
         city = row.get("city") if kind == "Domestic" else None
         address = row.get("address") if kind == "Domestic" else None
+        itypes = normalize_institution_types(row.get("institution_type"))
 
-        inst_id = get_or_create_institution(partner, country, kind, city, address)
-        dept_id = get_or_create_department(
-            row.get("implementing_unit"), row.get("scope")
+        inst_id = get_or_create_institution(
+            partner, country, kind, city, address, itypes=itypes,
         )
+
+        units = normalize_units(row.get("units"))
+        # Primary department: first unit, or 'Unspecified' if none provided.
+        primary_unit = units[0] if units else None
+        dept_id = get_or_create_department(primary_unit)
+        # Register the rest of the units as departments too, so they appear in filters.
+        unit_dept_ids = [dept_id]
+        for u in units[1:]:
+            unit_dept_ids.append(get_or_create_department(u))
 
         start_date = parse_iso_date(row.get("start_date"))
         end_kind, end_date_val = classify_end_date(row.get("end_date"))
@@ -336,7 +353,8 @@ def convert():
 
         atype = derive_type(row.get("agreement_type"))
 
-        # Synthesize a code: e.g. INT-0007 / DOM-0093 (preserve the source 'no')
+        scope_tags, scope_label = normalize_scope_array(row.get("scope"))
+
         prefix = "INT" if kind == "International" else "DOM"
         code = f"{prefix}-{int(row['no']):04d}"
 
@@ -345,13 +363,18 @@ def convert():
             "code": code,
             "source_no": row["no"],
             "kind": kind,
-            "title": clean_str(partner),         # human title — partner + agenda summary
-            "type": atype,                       # MoU | MoA | IA | Unknown
-            "status": status,                    # derived
+            "title": clean_str(partner),
+            "type": atype,
+            "status": status,
             "institution_id": inst_id,
             "department_id": dept_id,
-            "implementing_unit": clean_str(row.get("implementing_unit")),
-            "scope": clean_str(row.get("scope")),
+            "implementing_unit": primary_unit,
+            "units": units,
+            "unit_department_ids": unit_dept_ids,
+            "scope": scope_label,
+            "scope_tags": scope_tags,
+            "institution_type": itypes,
+            "new_partner": bool(row.get("new_partner")),
             "agenda": clean_str(row.get("agenda")),
             "degree_program": bool(row.get("degree_program")),
             "non_degree_program": bool(row.get("non_degree_program")),
@@ -371,30 +394,50 @@ def convert():
     for row in src.get("domestic", []):
         process(row, "Domestic")
 
+    # Fold the aggregated institution_type tags onto each institution.
+    for inst in institutions.values():
+        tags = inst_type_tags.get(inst["id"], {})
+        sorted_tags = sorted(tags.items(), key=lambda kv: (-kv[1], kv[0]))
+        inst["institution_types"] = [t for t, _ in sorted_tags]
+        primary = sorted_tags[0][0] if sorted_tags else None
+        inst["type"] = INSTITUTION_TYPE_LABELS.get(primary, primary.title() if primary else "Other")
+
     # Sort outputs for stable diffs
     inst_list = sorted(institutions.values(), key=lambda x: x["id"])
     dept_list = sorted(departments.values(), key=lambda x: x["id"])
     agreements.sort(key=lambda x: (x["kind"], x["source_no"]))
 
-    # Status histogram for sanity-check
     status_counts: dict[str, int] = {}
     type_counts: dict[str, int] = {}
     kind_counts: dict[str, int] = {}
+    inst_type_counts: dict[str, int] = {}
+    scope_counts: dict[str, int] = {}
+    new_partner_count = 0
     for a in agreements:
         status_counts[a["status"]] = status_counts.get(a["status"], 0) + 1
         type_counts[a["type"]] = type_counts.get(a["type"], 0) + 1
         kind_counts[a["kind"]] = kind_counts.get(a["kind"], 0) + 1
+        for t in a.get("institution_type", []) or []:
+            inst_type_counts[t] = inst_type_counts.get(t, 0) + 1
+        for s in a.get("scope_tags", []) or []:
+            scope_counts[s] = scope_counts.get(s, 0) + 1
+        if a.get("new_partner"):
+            new_partner_count += 1
 
     meta = {
         "today": TODAY.isoformat(),
+        "source": "data/partnerships_1.json",
         "totals": {
             "agreements": len(agreements),
             "institutions": len(inst_list),
             "departments": len(dept_list),
+            "new_partners": new_partner_count,
         },
         "by_status": dict(sorted(status_counts.items(), key=lambda kv: -kv[1])),
         "by_type": type_counts,
         "by_kind": kind_counts,
+        "by_institution_type": dict(sorted(inst_type_counts.items(), key=lambda kv: -kv[1])),
+        "by_scope": dict(sorted(scope_counts.items(), key=lambda kv: -kv[1])),
     }
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)

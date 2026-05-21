@@ -1,20 +1,14 @@
 [
   {
-    "id": "dept-baak",
-    "short": "BAAk",
-    "name": "BAAk",
+    "id": "dept-accounting",
+    "short": "Accounting",
+    "name": "Accounting",
     "is_faculty": false
   },
   {
-    "id": "dept-baka",
-    "short": "BAKA",
-    "name": "BAKA",
-    "is_faculty": false
-  },
-  {
-    "id": "dept-bpm",
-    "short": "BPM",
-    "name": "BPM",
+    "id": "dept-architecture",
+    "short": "Architecture",
+    "name": "Architecture",
     "is_faculty": false
   },
   {
@@ -24,201 +18,201 @@
     "is_faculty": false
   },
   {
-    "id": "dept-ccis",
-    "short": "CCIS",
-    "name": "CCIS",
+    "id": "dept-business-management",
+    "short": "Business Management",
+    "name": "Business Management",
     "is_faculty": false
   },
   {
-    "id": "dept-cec",
-    "short": "CEC",
-    "name": "CEC",
+    "id": "dept-chinese-literature",
+    "short": "Chinese Literature",
+    "name": "Chinese Literature",
     "is_faculty": false
   },
   {
-    "id": "dept-dmu",
-    "short": "DMU",
-    "name": "DMU",
+    "id": "dept-civil-engineering",
+    "short": "Civil Engineering",
+    "name": "Civil Engineering",
     "is_faculty": false
   },
   {
-    "id": "dept-doktor-manajemen",
-    "short": "Doktor Manajemen",
-    "name": "Doktor Manajemen",
+    "id": "dept-dentistry",
+    "short": "Dentistry",
+    "name": "Dentistry",
     "is_faculty": false
   },
   {
-    "id": "dept-fbe",
-    "short": "FBE",
-    "name": "FBE",
-    "is_faculty": true
-  },
-  {
-    "id": "dept-fbe-fti",
-    "short": "FBE, FTI",
-    "name": "FBE, FTI",
+    "id": "dept-doctor-of-civil-engineering",
+    "short": "Doctor of Civil Engineering",
+    "name": "Doctor of Civil Engineering",
     "is_faculty": false
   },
   {
-    "id": "dept-fbs",
-    "short": "FBS",
-    "name": "FBS",
-    "is_faculty": true
-  },
-  {
-    "id": "dept-fbs-fbe",
-    "short": "FBS & FBE",
-    "name": "FBS & FBE",
+    "id": "dept-doctor-of-management",
+    "short": "Doctor of Management",
+    "name": "Doctor of Management",
     "is_faculty": false
   },
   {
-    "id": "dept-fhik",
-    "short": "FHIK",
-    "name": "FHIK",
-    "is_faculty": true
-  },
-  {
-    "id": "dept-fk",
-    "short": "FK",
-    "name": "FK",
-    "is_faculty": true
-  },
-  {
-    "id": "dept-fk-fkg",
-    "short": "FK & FKG",
-    "name": "FK & FKG",
+    "id": "dept-early-childhood-teacher-educatio",
+    "short": "Early Childhood Teacher Education",
+    "name": "Early Childhood Teacher Education",
     "is_faculty": false
   },
   {
-    "id": "dept-fk-fkg-mrd",
-    "short": "FK, FKG, MRD",
-    "name": "FK, FKG, MRD",
+    "id": "dept-electric-engineering",
+    "short": "Electric Engineering",
+    "name": "Electric Engineering",
     "is_faculty": false
   },
   {
-    "id": "dept-fkg",
-    "short": "FKG",
-    "name": "FKG",
-    "is_faculty": true
-  },
-  {
-    "id": "dept-fkip",
-    "short": "FKIP",
-    "name": "FKIP",
-    "is_faculty": true
-  },
-  {
-    "id": "dept-fti",
-    "short": "FTI",
-    "name": "FTI",
-    "is_faculty": true
-  },
-  {
-    "id": "dept-fti-fbe",
-    "short": "FTI, FBE",
-    "name": "FTI, FBE",
+    "id": "dept-elementary-teacher-education",
+    "short": "Elementary Teacher Education",
+    "name": "Elementary Teacher Education",
     "is_faculty": false
   },
   {
-    "id": "dept-ftsp",
-    "short": "FTSP",
-    "name": "FTSP",
-    "is_faculty": true
-  },
-  {
-    "id": "dept-humas",
-    "short": "Humas",
-    "name": "Humas",
+    "id": "dept-english-literature",
+    "short": "English Literature",
+    "name": "English Literature",
     "is_faculty": false
   },
   {
-    "id": "dept-klinik-pratama",
-    "short": "Klinik Pratama",
-    "name": "Klinik Pratama",
+    "id": "dept-finance-management",
+    "short": "Finance Management",
+    "name": "Finance Management",
     "is_faculty": false
   },
   {
-    "id": "dept-ksi",
-    "short": "KSI",
-    "name": "KSI",
+    "id": "dept-food-technology",
+    "short": "Food Technology",
+    "name": "Food Technology",
     "is_faculty": false
   },
   {
-    "id": "dept-lppm",
-    "short": "LPPM",
-    "name": "LPPM",
+    "id": "dept-hotel-management",
+    "short": "Hotel Management",
+    "name": "Hotel Management",
     "is_faculty": false
   },
   {
-    "id": "dept-marketing-and-relations-",
-    "short": "Marketing and Relations Departement (MRD)",
-    "name": "Marketing and Relations Departement (MRD)",
+    "id": "dept-ikom",
+    "short": "IKOM",
+    "name": "IKOM",
     "is_faculty": false
   },
   {
-    "id": "dept-oia",
-    "short": "OIA",
-    "name": "OIA",
+    "id": "dept-industrial-engineering",
+    "short": "Industrial Engineering",
+    "name": "Industrial Engineering",
     "is_faculty": false
   },
   {
-    "id": "dept-pbs",
-    "short": "PBS",
-    "name": "PBS",
+    "id": "dept-informatics",
+    "short": "Informatics",
+    "name": "Informatics",
     "is_faculty": false
   },
   {
-    "id": "dept-perpustakaan",
-    "short": "Perpustakaan",
-    "name": "Perpustakaan",
+    "id": "dept-interior-design",
+    "short": "Interior Design",
+    "name": "Interior Design",
     "is_faculty": false
   },
   {
-    "id": "dept-petra-digital-institute",
-    "short": "Petra Digital Institute",
-    "name": "Petra Digital Institute",
+    "id": "dept-international-business-accountin",
+    "short": "International Business Accounting",
+    "name": "International Business Accounting",
     "is_faculty": false
   },
   {
-    "id": "dept-pgsd",
-    "short": "PGSD",
-    "name": "PGSD",
+    "id": "dept-international-business-managemen",
+    "short": "International Business Management",
+    "name": "International Business Management",
     "is_faculty": false
   },
   {
-    "id": "dept-ppb",
-    "short": "PPB",
-    "name": "PPB",
+    "id": "dept-international-digital-accounting",
+    "short": "International Digital Accounting & Fraud",
+    "name": "International Digital Accounting & Fraud",
     "is_faculty": false
   },
   {
-    "id": "dept-ptik",
-    "short": "PTIK",
-    "name": "PTIK",
+    "id": "dept-king-sejong-institute",
+    "short": "King Sejong Institute",
+    "name": "King Sejong Institute",
     "is_faculty": false
   },
   {
-    "id": "dept-pusat-karir",
-    "short": "Pusat Karir",
-    "name": "Pusat Karir",
+    "id": "dept-machine-engineering",
+    "short": "Machine Engineering",
+    "name": "Machine Engineering",
     "is_faculty": false
   },
   {
-    "id": "dept-pusroh",
-    "short": "Pusroh",
-    "name": "Pusroh",
+    "id": "dept-marketing-management",
+    "short": "Marketing Management",
+    "name": "Marketing Management",
     "is_faculty": false
   },
   {
-    "id": "dept-teknik-sipil",
-    "short": "Teknik Sipil",
-    "name": "Teknik Sipil",
+    "id": "dept-master-of-architecture",
+    "short": "Master of Architecture",
+    "name": "Master of Architecture",
     "is_faculty": false
   },
   {
-    "id": "dept-universitas",
-    "short": "Universitas",
-    "name": "Universitas",
+    "id": "dept-master-of-civil-engineering",
+    "short": "Master of Civil Engineering",
+    "name": "Master of Civil Engineering",
+    "is_faculty": false
+  },
+  {
+    "id": "dept-master-of-design",
+    "short": "Master of Design",
+    "name": "Master of Design",
+    "is_faculty": false
+  },
+  {
+    "id": "dept-master-of-industrial-engineering",
+    "short": "Master of Industrial Engineering",
+    "name": "Master of Industrial Engineering",
+    "is_faculty": false
+  },
+  {
+    "id": "dept-master-of-literature",
+    "short": "Master of Literature",
+    "name": "Master of Literature",
+    "is_faculty": false
+  },
+  {
+    "id": "dept-master-of-management",
+    "short": "Master of Management",
+    "name": "Master of Management",
+    "is_faculty": false
+  },
+  {
+    "id": "dept-medicine",
+    "short": "Medicine",
+    "name": "Medicine",
+    "is_faculty": false
+  },
+  {
+    "id": "dept-petra-business-school",
+    "short": "Petra Business School",
+    "name": "Petra Business School",
+    "is_faculty": false
+  },
+  {
+    "id": "dept-tax-accounting",
+    "short": "Tax Accounting",
+    "name": "Tax Accounting",
+    "is_faculty": false
+  },
+  {
+    "id": "dept-tourism-management",
+    "short": "Tourism Management",
+    "name": "Tourism Management",
     "is_faculty": false
   },
   {
@@ -228,15 +222,9 @@
     "is_faculty": false
   },
   {
-    "id": "dept-uppk",
-    "short": "UPPK",
-    "name": "UPPK",
-    "is_faculty": false
-  },
-  {
-    "id": "dept-yptk",
-    "short": "YPTK",
-    "name": "YPTK",
+    "id": "dept-visual-communication-design",
+    "short": "Visual Communication Design",
+    "name": "Visual Communication Design",
     "is_faculty": false
   }
 ]

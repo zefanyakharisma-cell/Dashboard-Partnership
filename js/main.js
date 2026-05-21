@@ -7,7 +7,7 @@
 
 /* ============================ Constants ================================== */
 
-const STORAGE_KEY = 'unicollab_state_v2';
+const STORAGE_KEY = 'unicollab_state_v3';
 const SESSION_KEY = 'unicollab_session_v1';
 
 const WORKFLOW_STAGES = [
@@ -317,7 +317,8 @@ const Store = {
       id: i.id,
       name: i.name,
       country: i.country || i.city || '—',
-      type: 'University', // source has no industry/govt/NGO distinction
+      type: i.type || 'University',
+      institutionTypes: i.institution_types || [],
       // Preserved extras for richer rendering
       kind: i.kind,
       city: i.city,
@@ -337,11 +338,11 @@ const Store = {
       const isLive = ['Active', 'Auto-renewed', 'Open-ended', 'Ended', 'Expired'].includes(status);
       const startIso = a.start_date ? new Date(a.start_date).toISOString() : new Date().toISOString();
       const endIso   = a.end_date   ? new Date(a.end_date).toISOString()   : null;
-      const tags = [a.kind, a.scope, a.implementing_unit]
+      const tags = [a.kind, a.scope, a.implementing_unit, ...(a.scope_tags || [])]
         .filter(Boolean)
         .map(String)
         .filter((t, i, arr) => arr.indexOf(t) === i)
-        .slice(0, 3);
+        .slice(0, 4);
       // The source has no real PIC — round-robin across non-viewer demo users
       // so "My Agreements" shows something for each admin role.
       const pic = picPool[idx % picPool.length];
@@ -373,7 +374,12 @@ const Store = {
         sourceNo: a.source_no,
         kind: a.kind,
         scope: a.scope,
+        scopeTags: a.scope_tags || [],
         implementingUnit: a.implementing_unit,
+        units: a.units || [],
+        unitDepartmentIds: a.unit_department_ids || [],
+        institutionType: a.institution_type || [],
+        newPartner: !!a.new_partner,
         endDateKind: a.end_date_kind,
         endDateRaw: a.end_date_raw,
         renewalDate: a.renewal_date,
@@ -1152,7 +1158,7 @@ function viewGuestLibrary() {
       const matchesQ = !q || [a.title, a.code, inst?.name, a.description, (a.tags || []).join(' ')].join(' ').toLowerCase().includes(q);
       const matchesK = !kind || a.kind === kind;
       const matchesT = !type || a.type === type;
-      const matchesD = !dept || a.departmentId === dept;
+      const matchesD = !dept || a.departmentId === dept || (a.unitDepartmentIds || []).includes(dept);
       return matchesQ && matchesK && matchesT && matchesD;
     });
     list.sort((a, b) => new Date(b.startDate || 0) - new Date(a.startDate || 0));
@@ -1609,11 +1615,11 @@ function viewAgreementList() {
     const sort = $('#ag-sort').value;
     let list = Store.state.agreements.filter((a) => {
       const inst = findInstitution(a.institutionId);
-      const matchesQ = !q || [a.title, a.code, inst?.name, a.description, a.implementingUnit, (a.tags || []).join(' ')].join(' ').toLowerCase().includes(q);
+      const matchesQ = !q || [a.title, a.code, inst?.name, a.description, a.implementingUnit, (a.units || []).join(' '), (a.tags || []).join(' ')].join(' ').toLowerCase().includes(q);
       const matchesS = !status || a.status === status;
       const matchesT = !type || a.type === type;
       const matchesK = !kind || a.kind === kind;
-      const matchesD = !dept || a.departmentId === dept;
+      const matchesD = !dept || a.departmentId === dept || (a.unitDepartmentIds || []).includes(dept);
       return matchesQ && matchesS && matchesT && matchesK && matchesD;
     });
     list.sort((a, b) => {
@@ -1737,6 +1743,7 @@ function viewAgreementDetail({ id }) {
         <div class="flex items-center gap-2 flex-wrap">
           <span class="text-[10px] font-bold px-2 py-1 rounded-md ${typeChipClass(a.type)}">${a.type}</span>
           ${UI.pill(a.status)}
+          ${a.newPartner ? '<span class="text-[10px] font-semibold px-2 py-1 rounded-md bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">New Partner</span>' : ''}
           <span class="font-mono text-xs text-slate-500">${escapeHtml(a.code)}</span>
         </div>
         <h1 class="mt-2 text-2xl font-bold text-slate-900 dark:text-white">${escapeHtml(a.title)}</h1>
@@ -1788,7 +1795,15 @@ function viewAgreementDetail({ id }) {
                     <dt class="text-xs font-semibold text-slate-500">Program</dt>
                     <dd class="mt-1 font-medium">${[a.degreeProgram && 'Degree', a.nonDegreeProgram && 'Non-degree'].filter(Boolean).join(' + ')}</dd>
                   </div>` : ''}
+                  ${(a.institutionType && a.institutionType.length) ? `<div class="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50">
+                    <dt class="text-xs font-semibold text-slate-500">Partner sector</dt>
+                    <dd class="mt-1 font-medium">${a.institutionType.map((t) => escapeHtml(String(t).replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()))).join(', ')}</dd>
+                  </div>` : ''}
                 </dl>
+                ${(a.units && a.units.length > 1) ? `<div class="mt-4 p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50">
+                  <div class="text-xs font-semibold text-slate-500 mb-2">Participating programs (${a.units.length})</div>
+                  <div class="flex flex-wrap gap-1.5">${a.units.map((u) => `<span class="text-[11px] font-medium px-2 py-1 rounded-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700">${escapeHtml(u)}</span>`).join('')}</div>
+                </div>` : ''}
                 ${a.realization ? `<div class="mt-4 p-3 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30">
                   <div class="text-xs font-semibold text-emerald-800 dark:text-emerald-300 mb-1">Realization / Track Record</div>
                   <div class="text-sm text-emerald-900 dark:text-emerald-200 whitespace-pre-line">${escapeHtml(String(a.realization))}</div>
