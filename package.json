@@ -1,0 +1,24 @@
+{
+  "name": "dashboard-partnership",
+  "version": "1.0.0",
+  "description": "A responsive web dashboard for managing Petra Christian University's (Universitas Kristen Petra) partnership portfolio — **MoU**, **MoA**, and **IA** agreements across domestic and international institutions. Built as a single-page application using **vanilla JavaScript + Tailwind CSS + Chart.js + Lucide Icons**, with `localStorage` persistence over a real institutional dataset served from `/data`.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zefanyakharisma-cell/Dashboard-Partnership.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/zefanyakharisma-cell/Dashboard-Partnership/issues"
+  },
+  "homepage": "https://github.com/zefanyakharisma-cell/Dashboard-Partnership#readme",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.106.1"
+  }
+}
