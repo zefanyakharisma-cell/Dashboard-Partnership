@@ -50,6 +50,12 @@ const IN_PROGRESS_STATUSES = [
 
 const AGREEMENT_TYPES = ['MoU', 'MoA', 'IA'];
 
+// Groupings exposed as filter dropdowns on the agreement database.
+// Keep in sync with meta.json (by_institution_type, by_scope).
+const INSTITUTION_TYPES = ['education', 'industry', 'organization', 'government', 'foundation'];
+const SCOPES = ['learning', 'research', 'student_affairs', 'community_service'];
+const titleCase = (s) => String(s || '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+
 const isLifecycleStatus = (s) => LIFECYCLE_STATUSES.includes(s);
 const isLiveAgreement  = (s) => ['Active', 'Auto-renewed', 'Open-ended', 'Signed', 'Completed'].includes(s);
 
@@ -1535,8 +1541,8 @@ function viewAgreementList() {
         <p class="text-sm text-slate-500 mt-1">Manage all MoU and MoA records.</p>
       </div>
       <div class="flex items-center gap-2">
-        <button data-action="export" class="inline-flex items-center gap-2 px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-semibold">
-          <i data-lucide="download" class="w-4 h-4"></i> CSV
+        <button data-action="export" class="inline-flex items-center gap-2 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-semibold">
+          <i data-lucide="file-spreadsheet" class="w-4 h-4"></i> Export Excel
         </button>
         <a href="#/admin/agreements/new" class="inline-flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg text-sm font-semibold">
           <i data-lucide="plus" class="w-4 h-4"></i> New Agreement
@@ -1572,6 +1578,20 @@ function viewAgreementList() {
           <option value="">All units</option>
           ${[...Store.state.departments].sort((a, b) => a.short.localeCompare(b.short)).map((d) => `<option value="${d.id}">${escapeHtml(d.short)}</option>`).join('')}
         </select>
+        <select id="ag-itype" class="h-10 px-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm">
+          <option value="">All institution types</option>
+          ${INSTITUTION_TYPES.map((t) => `<option value="${t}">${titleCase(t)}</option>`).join('')}
+        </select>
+        <select id="ag-scope" class="h-10 px-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm">
+          <option value="">All scopes</option>
+          ${SCOPES.map((s) => `<option value="${s}">${titleCase(s)}</option>`).join('')}
+        </select>
+        <select id="ag-newpartner" class="h-10 px-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm">
+          <option value="">All partners</option>
+          <option value="yes">New partners</option>
+          <option value="no">Returning partners</option>
+        </select>
+        <button id="ag-clear" type="button" class="h-10 px-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-medium text-slate-600 hover:text-slate-900 dark:text-slate-300">Clear filters</button>
         <select id="ag-sort" class="h-10 px-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm">
           <option value="updated_desc">Recently updated</option>
           <option value="created_desc">Newest start date</option>
@@ -1605,23 +1625,37 @@ function viewAgreementList() {
 
   let page = 1;
   const pageSize = 10;
+  let lastFiltered = [];
 
-  const render = () => {
+  const computeFiltered = () => {
     const q = $('#ag-q').value.trim().toLowerCase();
     const status = $('#ag-status').value;
     const type = $('#ag-type').value;
     const kind = $('#ag-kind').value;
     const dept = $('#ag-dept').value;
-    const sort = $('#ag-sort').value;
-    let list = Store.state.agreements.filter((a) => {
+    const itype = $('#ag-itype').value;
+    const scope = $('#ag-scope').value;
+    const newPartner = $('#ag-newpartner').value;
+    return Store.state.agreements.filter((a) => {
       const inst = findInstitution(a.institutionId);
       const matchesQ = !q || [a.title, a.code, inst?.name, a.description, a.implementingUnit, (a.units || []).join(' '), (a.tags || []).join(' ')].join(' ').toLowerCase().includes(q);
       const matchesS = !status || a.status === status;
       const matchesT = !type || a.type === type;
       const matchesK = !kind || a.kind === kind;
       const matchesD = !dept || a.departmentId === dept || (a.unitDepartmentIds || []).includes(dept);
-      return matchesQ && matchesS && matchesT && matchesK && matchesD;
+      // institution_type can live on the agreement row OR on the linked institution
+      const agITypes = Array.isArray(a.institutionType) ? a.institutionType : (a.institutionType ? [a.institutionType] : []);
+      const instITypes = inst?.institutionTypes || [];
+      const matchesIType = !itype || agITypes.includes(itype) || instITypes.includes(itype);
+      const matchesScope = !scope || a.scope === scope || (a.scopeTags || []).includes(scope);
+      const matchesNew = !newPartner || (newPartner === 'yes' ? !!a.newPartner : !a.newPartner);
+      return matchesQ && matchesS && matchesT && matchesK && matchesD && matchesIType && matchesScope && matchesNew;
     });
+  };
+
+  const render = () => {
+    const sort = $('#ag-sort').value;
+    let list = computeFiltered();
     list.sort((a, b) => {
       // Sort puts null end dates last for end_asc; oldest first otherwise.
       const aE = a.endDate ? new Date(a.endDate).getTime() : Infinity;
@@ -1633,6 +1667,7 @@ function viewAgreementList() {
         default: return new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0);
       }
     });
+    lastFiltered = list;
 
     const totalPages = Math.max(1, Math.ceil(list.length / pageSize));
     if (page > totalPages) page = totalPages;
@@ -1710,10 +1745,16 @@ function viewAgreementList() {
   };
 
   $('#ag-q').addEventListener('input', debounce(() => { page = 1; render(); }, 150));
-  ['ag-status', 'ag-type', 'ag-kind', 'ag-dept', 'ag-sort'].forEach((id) =>
+  ['ag-status', 'ag-type', 'ag-kind', 'ag-dept', 'ag-itype', 'ag-scope', 'ag-newpartner', 'ag-sort'].forEach((id) =>
     $(`#${id}`).addEventListener('change', () => { page = 1; render(); }),
   );
-  $('[data-action="export"]').addEventListener('click', exportAgreementsCSV);
+  $('#ag-clear').addEventListener('click', () => {
+    $('#ag-q').value = '';
+    ['ag-status', 'ag-type', 'ag-kind', 'ag-dept', 'ag-itype', 'ag-scope', 'ag-newpartner'].forEach((id) => { $(`#${id}`).value = ''; });
+    page = 1;
+    render();
+  });
+  $('[data-action="export"]').addEventListener('click', () => exportAgreementsXLSX(lastFiltered, 'partnerships-filtered'));
 
   render();
 }
@@ -2653,6 +2694,59 @@ function exportAgreementsCSV(list, filename = 'partnerships') {
   });
   downloadFile(`${filename}-${new Date().toISOString().slice(0, 10)}.csv`, csv.join('\n'), 'text/csv');
   Toast.show('CSV exported.', 'success');
+}
+
+function exportAgreementsXLSX(list, filename = 'partnerships') {
+  const rows = list || Store.state.agreements;
+  if (typeof XLSX === 'undefined') {
+    Toast.show('Excel library not loaded — falling back to CSV.', 'warning');
+    exportAgreementsCSV(rows, filename);
+    return;
+  }
+  if (!rows.length) {
+    Toast.show('No rows match the current filters.', 'warning');
+    return;
+  }
+  const data = rows.map((a) => {
+    const inst = findInstitution(a.institutionId);
+    const dept = findDepartment(a.departmentId);
+    const agITypes = Array.isArray(a.institutionType) ? a.institutionType : (a.institutionType ? [a.institutionType] : []);
+    const itypes = agITypes.length ? agITypes : (inst?.institutionTypes || []);
+    return {
+      'Code': a.code || '',
+      'Region': a.kind || '',
+      'Type': a.type || '',
+      'Status': a.status || '',
+      'Partner': inst?.name || a.title || '',
+      'Country': inst?.country || '',
+      'City': inst?.city || '',
+      'Institution Type': itypes.map(titleCase).join(', '),
+      'Implementing Unit': a.implementingUnit || '',
+      'Department': dept?.short || '',
+      'Scope': titleCase(a.scope || ''),
+      'Scope Tags': (a.scopeTags || []).map(titleCase).join(', '),
+      'New Partner': a.newPartner ? 'Yes' : 'No',
+      'Start Date': a.startDate ? a.startDate.slice(0, 10) : '',
+      'End Date': a.endDate ? a.endDate.slice(0, 10) : '',
+      'End Date (raw)': a.endDateRaw || '',
+      'Renewal Date': a.renewalDate ? String(a.renewalDate).slice(0, 10) : '',
+      'Agenda': a.description || '',
+      'Realization': a.realization ?? '',
+      'Notes': a.notes || '',
+    };
+  });
+  const ws = XLSX.utils.json_to_sheet(data);
+  // Auto-size columns based on the longest cell per column (capped).
+  const headers = Object.keys(data[0]);
+  ws['!cols'] = headers.map((h) => {
+    const maxLen = data.reduce((m, row) => Math.max(m, String(row[h] ?? '').length), h.length);
+    return { wch: Math.min(60, maxLen + 2) };
+  });
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Partnerships');
+  const stamp = new Date().toISOString().slice(0, 10);
+  XLSX.writeFile(wb, `${filename}-${stamp}.xlsx`);
+  Toast.show(`Exported ${rows.length} row(s) to Excel.`, 'success');
 }
 
 /* ============================ 404 ======================================== */
