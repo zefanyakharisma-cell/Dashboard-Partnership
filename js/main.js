@@ -272,6 +272,7 @@ const Store = {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         this.state = JSON.parse(raw);
+        if (this._ensureSeedUsers()) this.save();
         return this.state;
       }
     } catch (e) { /* ignore */ }
@@ -279,6 +280,26 @@ const Store = {
     this.state = await this.loadRealData();
     this.save();
     return this.state;
+  },
+
+  // Merge any missing seed users into the persisted state. Returns true if the
+  // state was modified. Older localStorage snapshots predate the admin seed,
+  // which left signed-in admins matched as Viewer.
+  _ensureSeedUsers() {
+    if (!this.state || !Array.isArray(this.state.users)) return false;
+    let changed = false;
+    for (const seed of this.defaultUsers()) {
+      const email = (seed.email || '').toLowerCase();
+      const existing = this.state.users.find((u) => (u.email || '').toLowerCase() === email);
+      if (!existing) {
+        this.state.users.push(seed);
+        changed = true;
+      } else if (existing.role !== seed.role) {
+        existing.role = seed.role;
+        changed = true;
+      }
+    }
+    return changed;
   },
 
   save() {
