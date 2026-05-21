@@ -10,9 +10,11 @@ A responsive web dashboard for managing Petra Christian University's (Universita
 
 | | |
 |---|---|
-| Dataset | **1,009** agreements · **706** institutions · **40** departments |
+| Dataset | **2,289** agreements · **1,201** institutions · **38** departments · **1,130** new partners |
 | Agreement types | MoU · MoA · IA |
-| Coverage | 625 domestic · 384 international |
+| Coverage | 1,584 domestic · 705 international |
+| Scope tags | Learning · Research · Student Affairs · Community Service |
+| Institution types | Education · Industry · Organization · Government · Foundation |
 | Stack | Vanilla JS · Tailwind (CDN) · Chart.js · Lucide |
 | Storage | `localStorage` (client) · JSON files (source of truth) |
 | Snapshot date | 2026-05-21 |
@@ -109,11 +111,11 @@ Dashboard Partnership/
 ├── js/
 │   └── main.js             # Full SPA: router, store, auth, views, charts
 ├── data/
-│   ├── partnerships.source.json   # Raw source database (input)
-│   ├── institutions.json          # Deduped institutions (generated)
-│   ├── departments.json           # Departments / faculties (generated)
-│   ├── agreements.json            # Normalized agreements (generated)
-│   └── meta.json                  # Counts + status breakdown (generated)
+│   ├── partnerships_1.json        # Raw source database (input)
+│   ├── institutions.json          # Deduped institutions w/ institution_type tags (generated)
+│   ├── departments.json           # Departments / faculties / units (generated)
+│   ├── agreements.json            # Normalized agreements w/ units, scope_tags, flags (generated)
+│   └── meta.json                  # Totals + status/type/kind/scope/institution_type breakdowns (generated)
 ├── scripts/
 │   └── convert_partnerships.py    # Source → normalized JSON converter
 └── README.md
@@ -137,10 +139,10 @@ Dashboard Partnership/
 
 ## Data Pipeline
 
-The dashboard reads from three normalized JSON files in `/data`. These are derived from `partnerships.source.json` via a deterministic Python script.
+The dashboard reads from four normalized JSON files in `/data`. These are derived from `partnerships_1.json` via a deterministic Python script.
 
 ```
-partnerships.source.json
+partnerships_1.json   (international[] + domestic[])
         │
         │   python3 scripts/convert_partnerships.py
         ▼
@@ -159,10 +161,12 @@ python3 scripts/convert_partnerships.py
 
 The script:
 - Repairs mojibake (Latin-1 → UTF-8 round-trip) in names and addresses
-- Dedupes institutions by canonical key
-- Derives departments from the `implementing_unit` prefix
-- Maps each agreement to a lifecycle status using `start_date` / `end_date` relative to `TODAY` (2026-05-21)
-- Writes `meta.json` with totals and breakdowns
+- Dedupes institutions by canonical key (trims trailing country/city suffixes) and aggregates `institution_type` tags across all of an institution's agreements to pick a dominant display type
+- Derives departments from the per-agreement `units` array — the first unit becomes the primary department, the rest are still registered so they appear in filters
+- Normalizes the new `scope` array (`learning` / `research` / `student_affairs` / `community_service`) into `scope_tags` plus a human label
+- Classifies `end_date` strings into `date` / `auto_renewed` / `no_limit` / `na` / `unknown`, parses Indonesian note patterns (`belum pengusulan`, `proses pembaruan`, `end`, …) and maps each agreement to a lifecycle status relative to `TODAY` (2026-05-21)
+- Preserves `new_partner`, `agenda`, `degree_program`, `non_degree_program`, `renewal_info`, and `realization` from the source row
+- Writes `meta.json` with totals plus breakdowns by status, type, kind, institution_type, and scope
 
 After regenerating, hard-refresh the browser **and** reset local data (Settings → Reset) so the cached `localStorage` snapshot is rebuilt.
 
@@ -414,7 +418,7 @@ The component layout, page structure, and routes in this prototype map 1:1 to th
 
 ### Prerequisites
 - A modern browser (Chrome, Firefox, Edge, Safari)
-- **Python 3.9+** — only if you want to regenerate the normalized JSON from `partnerships.source.json`
+- **Python 3.9+** — only if you want to regenerate the normalized JSON from `partnerships_1.json`
 - Any static file server (Python, Node, `caddy file-server`, `live-server`, etc.)
 
 ### Workflow
@@ -441,7 +445,7 @@ There is no build step. Tailwind runs from CDN, and `main.js` is loaded as a pla
 
 ### Contributing
 1. Fork & create a feature branch (`feat/...`, `fix/...`, `docs/...`).
-2. Test the change locally against the **full** dataset (1,009 agreements) — pagination, filtering, and chart rendering all change behavior at scale.
+2. Test the change locally against the **full** dataset (2,289 agreements) — pagination, filtering, and chart rendering all change behavior at scale.
 3. Verify both **guest** and **admin** views, and both **light** and **dark** modes.
 4. Open a PR describing the change and any data-shape implications.
 
@@ -461,9 +465,10 @@ There is no build step. Tailwind runs from CDN, and `main.js` is loaded as a pla
 
 The bundled dataset is Petra Christian University's real partnership portfolio (snapshot 2026-05-21):
 
-- **40 departments / faculties** (Engineering, Business, Communication, Informatics, Civil & Planning, etc.)
-- **706 institutions** across domestic and international partners
-- **1,009 agreements** spanning every workflow stage and lifecycle status
+- **38 departments / faculties / units** (Engineering, Business, Communication, Informatics, Civil & Planning, etc.)
+- **1,201 institutions** across domestic and international partners
+- **2,289 agreements** spanning every workflow stage and lifecycle status
+- **1,130 flagged as new partners** in the source dataset
 - **5 demo users** across all roles (added on top of the dataset — the source has no user records)
 - **Activity logs** for every status transition
 - **Notifications** auto-generated for upcoming expirations
@@ -472,12 +477,48 @@ Breakdown by status (from `data/meta.json`):
 
 | Status | Count |
 |---|---|
+| Expired | 1,101 |
 | Active | 423 |
 | Auto-renewed | 314 |
-| Pending Approval | 130 |
-| Unknown | 129 |
-| Ended | 10 |
-| Renewal In Progress | 3 |
+| Unknown | 169 |
+| Pending Approval | 157 |
+| Ended | 74 |
+| Renewal In Progress | 51 |
+
+Breakdown by type:
+
+| Type | Count |
+|---|---|
+| MoU | 1,055 |
+| MoA | 1,046 |
+| IA | 126 |
+| Unknown | 62 |
+
+Breakdown by kind:
+
+| Kind | Count |
+|---|---|
+| Domestic | 1,584 |
+| International | 705 |
+
+Breakdown by institution type (an agreement can carry multiple tags):
+
+| Institution type | Count |
+|---|---|
+| Education | 1,201 |
+| Industry | 671 |
+| Organization | 296 |
+| Government | 102 |
+| Foundation | 12 |
+
+Breakdown by scope (an agreement can carry multiple tags):
+
+| Scope | Count |
+|---|---|
+| Learning | 684 |
+| Research | 542 |
+| Student Affairs | 469 |
+| Community Service | 459 |
 
 ---
 
