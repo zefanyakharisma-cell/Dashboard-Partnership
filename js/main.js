@@ -314,8 +314,8 @@ const Store = {
   },
 
   buildStateFromSource(srcInstitutions, srcDepartments, srcAgreements) {
-    // The source database has no user records — keep a small set of auth
-    // accounts so the admin console is reachable, and round-robin PIC roles.
+    // The source database has no user records — seed the single Admin account
+    // so the admin console is reachable. PIC defaults to the Admin.
     const users = this.defaultUsers();
     const picPool = users.filter((u) => u.active && u.role !== 'Viewer');
 
@@ -349,8 +349,8 @@ const Store = {
         .map(String)
         .filter((t, i, arr) => arr.indexOf(t) === i)
         .slice(0, 4);
-      // The source has no real PIC — round-robin across non-viewer demo users
-      // so "My Agreements" shows something for each admin role.
+      // The source has no real PIC — round-robin across active non-viewer
+      // users so "My Agreements" shows something for the signed-in admin.
       const pic = picPool[idx % picPool.length];
       return {
         id: a.id,
@@ -447,11 +447,7 @@ const Store = {
 
   defaultUsers() {
     return [
-      { id: 'u1', name: 'Zefanya Kharisma Nugroho', email: 'admin@unicollab.edu',  role: 'Admin',   department: null, avatar: '👩‍💼', password: 'admin123',   active: true },
-      { id: 'u2', name: 'Prof. Budi Santoso',  email: 'budi@unicollab.edu',   role: 'Manager', department: null, avatar: '👨‍🏫', password: 'manager123', active: true },
-      { id: 'u3', name: 'Linda Pratiwi',       email: 'linda@unicollab.edu',  role: 'Staff',   department: null, avatar: '👩‍⚖️', password: 'staff123',   active: true },
-      { id: 'u4', name: 'Andi Wijaya',         email: 'andi@unicollab.edu',   role: 'Staff',   department: null, avatar: '👨‍💻', password: 'staff123',   active: true },
-      { id: 'u5', name: 'Maya Kusuma',         email: 'maya@unicollab.edu',   role: 'Viewer',  department: null, avatar: '👩‍🎓', password: 'viewer123',  active: false },
+      { id: 'u1', name: 'Zefanya Kharisma Nugroho', email: 'zefanya.kharisma@gmail.com', role: 'Admin', department: null, avatar: '👩‍💼', active: true },
     ];
   },
 

@@ -16,6 +16,7 @@ A responsive web dashboard for managing Petra Christian University's (Universita
 | Scope tags | Learning · Research · Student Affairs · Community Service |
 | Institution types | Education · Industry · Organization · Government · Foundation |
 | Stack | Vanilla JS · Tailwind (CDN) · Chart.js · Lucide |
+| Auth | **Supabase Auth** (email + password, magic-link, sign-up) |
 | Storage | `localStorage` (client) · JSON files (source of truth) |
 | Snapshot date | 2026-05-21 |
 
@@ -35,7 +36,8 @@ A responsive web dashboard for managing Petra Christian University's (Universita
 - Public **Analytics** page
 
 ### Admin (Authenticated)
-- Email/password login with role-based access (Admin / Manager / Staff / Viewer)
+- **Supabase Auth** sign-in — email/password + magic-link, with sign-up from the login page
+- Role-based access (Admin / Manager / Staff / Viewer) — Supabase session is matched to a local user record by email
 - **Dashboard** with KPI cards, charts, expiring agreements, "My Agreements"
 - **Agreement List** with multi-column filter (status, type, department), full-text search, sortable, paginated
 - **Agreement Detail** with workflow visualization, document attachments, status history timeline, activity log
@@ -72,15 +74,30 @@ npx serve -l 8080 .
 # Then visit http://localhost:8080
 ```
 
-### Demo Credentials
+### Supabase Setup
 
-| Role    | Email                       | Password    |
-|---------|-----------------------------|-------------|
-| Admin   | admin@unicollab.edu         | admin123    |
-| Manager | budi@unicollab.edu          | manager123  |
-| Staff   | linda@unicollab.edu         | staff123    |
-| Staff   | andi@unicollab.edu          | staff123    |
-| Viewer  | maya@unicollab.edu          | viewer123   *(inactive)*
+Auth is backed by **Supabase Auth**, so the dashboard needs a Supabase project before sign-in works.
+
+1. Create a project at [supabase.com](https://supabase.com) → **Project Settings → API**.
+2. Copy the **Project URL** and **anon public key**.
+3. Open `js/supabase-client.js` and fill in:
+
+   ```js
+   const SUPABASE_URL = 'https://<your-project-ref>.supabase.co';
+   const SUPABASE_ANON_KEY = '<your-anon-public-key>';
+   ```
+
+4. (Optional) In **Authentication → Providers**, enable **Email** with password and/or magic-link. If "Confirm email" is on, new sign-ups must verify before logging in.
+
+If the keys are missing, the login screen surfaces a banner saying Supabase isn't configured. The rest of the app (guest dashboard, library, analytics) still works against the bundled `/data` JSON.
+
+### Admin Account
+
+| Role  | Email                       |
+|-------|-----------------------------|
+| Admin | zefanya.kharisma@gmail.com  |
+
+Sign-in is handled by Supabase Auth — create the account in your Supabase project (or sign up via the login page) using the email above so the local Admin role is matched on login. Any Supabase user whose email doesn't match a seeded record is dropped to a **Viewer** role. Additional users can be added in **User Management** once signed in.
 
 State persists in `localStorage` (key `unicollab_state_v2`). To wipe local edits and reload from `/data`: **Settings → Reset to demo data**, or in DevTools console: `localStorage.removeItem('unicollab_state_v2')` then refresh.
 
@@ -109,7 +126,8 @@ Dashboard Partnership/
 ├── css/
 │   └── style.css           # Custom styles, animations, themed pills
 ├── js/
-│   └── main.js             # Full SPA: router, store, auth, views, charts
+│   ├── main.js             # Full SPA: router, store, auth, views, charts
+│   └── supabase-client.js  # Supabase URL + anon key bootstrap (window.supabaseClient)
 ├── data/
 │   ├── partnerships_1.json        # Raw source database (input)
 │   ├── institutions.json          # Deduped institutions w/ institution_type tags (generated)
@@ -126,7 +144,7 @@ Dashboard Partnership/
 | Module | Responsibility |
 |--------|----------------|
 | `Store` | Load source JSON, normalize, persist to `localStorage`, reset |
-| `Auth` | Login, logout, session in `sessionStorage` |
+| `Auth` | Supabase Auth wrapper — login, sign-up, magic-link, logout; maps Supabase session → local user by email |
 | `Theme` | Dark/light mode with persistence |
 | `Router` | Hash-based SPA router with `requireAuth` guard |
 | `Toast` | Animated stackable notifications |
@@ -455,6 +473,9 @@ There is no build step. Tailwind runs from CDN, and `main.js` is loaded as a pla
 |---|---|---|
 | Boot error: "fetch blocked on file://" | Opened `index.html` directly | Serve over HTTP (see [Run Locally](#run-locally)) |
 | `data/*.json → HTTP 404` | Server not started from project root | `cd` into the project root before running the server |
+| Login banner: "Supabase isn't configured" | `SUPABASE_URL` / `SUPABASE_ANON_KEY` blank | Fill them in `js/supabase-client.js` (see [Supabase Setup](#supabase-setup)) |
+| Sign-up succeeds but login fails | Supabase "Confirm email" is enabled | Verify the confirmation email, or disable confirmation in **Authentication → Providers** |
+| Signed-in user lands as Viewer | Email doesn't match a seeded local user | Sign in with the seeded Admin email, or add the user via **User Management** |
 | Stale data after `convert_partnerships.py` | `localStorage` snapshot is older | Settings → Reset, or `localStorage.clear()` |
 | `QuotaExceeded` on save | Browser localStorage limit (~5 MB) | Use Settings → Export, then reset; or switch to a backend |
 | Charts blank in dark mode | Chart instance cached with old theme | Toggle theme once, or refresh |
@@ -469,7 +490,7 @@ The bundled dataset is Petra Christian University's real partnership portfolio (
 - **1,201 institutions** across domestic and international partners
 - **2,289 agreements** spanning every workflow stage and lifecycle status
 - **1,130 flagged as new partners** in the source dataset
-- **5 demo users** across all roles (added on top of the dataset — the source has no user records)
+- **1 seeded Admin user** (added on top of the dataset — the source has no user records)
 - **Activity logs** for every status transition
 - **Notifications** auto-generated for upcoming expirations
 
