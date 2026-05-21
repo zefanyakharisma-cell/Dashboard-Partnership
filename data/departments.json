@@ -1,0 +1,242 @@
+[
+  {
+    "id": "dept-baak",
+    "short": "BAAk",
+    "name": "BAAk",
+    "is_faculty": false
+  },
+  {
+    "id": "dept-baka",
+    "short": "BAKA",
+    "name": "BAKA",
+    "is_faculty": false
+  },
+  {
+    "id": "dept-bpm",
+    "short": "BPM",
+    "name": "BPM",
+    "is_faculty": false
+  },
+  {
+    "id": "dept-business-accounting",
+    "short": "Business Accounting",
+    "name": "Business Accounting",
+    "is_faculty": false
+  },
+  {
+    "id": "dept-ccis",
+    "short": "CCIS",
+    "name": "CCIS",
+    "is_faculty": false
+  },
+  {
+    "id": "dept-cec",
+    "short": "CEC",
+    "name": "CEC",
+    "is_faculty": false
+  },
+  {
+    "id": "dept-dmu",
+    "short": "DMU",
+    "name": "DMU",
+    "is_faculty": false
+  },
+  {
+    "id": "dept-doktor-manajemen",
+    "short": "Doktor Manajemen",
+    "name": "Doktor Manajemen",
+    "is_faculty": false
+  },
+  {
+    "id": "dept-fbe",
+    "short": "FBE",
+    "name": "FBE",
+    "is_faculty": true
+  },
+  {
+    "id": "dept-fbe-fti",
+    "short": "FBE, FTI",
+    "name": "FBE, FTI",
+    "is_faculty": false
+  },
+  {
+    "id": "dept-fbs",
+    "short": "FBS",
+    "name": "FBS",
+    "is_faculty": true
+  },
+  {
+    "id": "dept-fbs-fbe",
+    "short": "FBS & FBE",
+    "name": "FBS & FBE",
+    "is_faculty": false
+  },
+  {
+    "id": "dept-fhik",
+    "short": "FHIK",
+    "name": "FHIK",
+    "is_faculty": true
+  },
+  {
+    "id": "dept-fk",
+    "short": "FK",
+    "name": "FK",
+    "is_faculty": true
+  },
+  {
+    "id": "dept-fk-fkg",
+    "short": "FK & FKG",
+    "name": "FK & FKG",
+    "is_faculty": false
+  },
+  {
+    "id": "dept-fk-fkg-mrd",
+    "short": "FK, FKG, MRD",
+    "name": "FK, FKG, MRD",
+    "is_faculty": false
+  },
+  {
+    "id": "dept-fkg",
+    "short": "FKG",
+    "name": "FKG",
+    "is_faculty": true
+  },
+  {
+    "id": "dept-fkip",
+    "short": "FKIP",
+    "name": "FKIP",
+    "is_faculty": true
+  },
+  {
+    "id": "dept-fti",
+    "short": "FTI",
+    "name": "FTI",
+    "is_faculty": true
+  },
+  {
+    "id": "dept-fti-fbe",
+    "short": "FTI, FBE",
+    "name": "FTI, FBE",
+    "is_faculty": false
+  },
+  {
+    "id": "dept-ftsp",
+    "short": "FTSP",
+    "name": "FTSP",
+    "is_faculty": true
+  },
+  {
+    "id": "dept-humas",
+    "short": "Humas",
+    "name": "Humas",
+    "is_faculty": false
+  },
+  {
+    "id": "dept-klinik-pratama",
+    "short": "Klinik Pratama",
+    "name": "Klinik Pratama",
+    "is_faculty": false
+  },
+  {
+    "id": "dept-ksi",
+    "short": "KSI",
+    "name": "KSI",
+    "is_faculty": false
+  },
+  {
+    "id": "dept-lppm",
+    "short": "LPPM",
+    "name": "LPPM",
+    "is_faculty": false
+  },
+  {
+    "id": "dept-marketing-and-relations-",
+    "short": "Marketing and Relations Departement (MRD)",
+    "name": "Marketing and Relations Departement (MRD)",
+    "is_faculty": false
+  },
+  {
+    "id": "dept-oia",
+    "short": "OIA",
+    "name": "OIA",
+    "is_faculty": false
+  },
+  {
+    "id": "dept-pbs",
+    "short": "PBS",
+    "name": "PBS",
+    "is_faculty": false
+  },
+  {
+    "id": "dept-perpustakaan",
+    "short": "Perpustakaan",
+    "name": "Perpustakaan",
+    "is_faculty": false
+  },
+  {
+    "id": "dept-petra-digital-institute",
+    "short": "Petra Digital Institute",
+    "name": "Petra Digital Institute",
+    "is_faculty": false
+  },
+  {
+    "id": "dept-pgsd",
+    "short": "PGSD",
+    "name": "PGSD",
+    "is_faculty": false
+  },
+  {
+    "id": "dept-ppb",
+    "short": "PPB",
+    "name": "PPB",
+    "is_faculty": false
+  },
+  {
+    "id": "dept-ptik",
+    "short": "PTIK",
+    "name": "PTIK",
+    "is_faculty": false
+  },
+  {
+    "id": "dept-pusat-karir",
+    "short": "Pusat Karir",
+    "name": "Pusat Karir",
+    "is_faculty": false
+  },
+  {
+    "id": "dept-pusroh",
+    "short": "Pusroh",
+    "name": "Pusroh",
+    "is_faculty": false
+  },
+  {
+    "id": "dept-teknik-sipil",
+    "short": "Teknik Sipil",
+    "name": "Teknik Sipil",
+    "is_faculty": false
+  },
+  {
+    "id": "dept-universitas",
+    "short": "Universitas",
+    "name": "Universitas",
+    "is_faculty": false
+  },
+  {
+    "id": "dept-unspecified",
+    "short": "Unspecified",
+    "name": "Unspecified",
+    "is_faculty": false
+  },
+  {
+    "id": "dept-uppk",
+    "short": "UPPK",
+    "name": "UPPK",
+    "is_faculty": false
+  },
+  {
+    "id": "dept-yptk",
+    "short": "YPTK",
+    "name": "YPTK",
+    "is_faculty": false
+  }
+]

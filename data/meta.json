@@ -1,0 +1,26 @@
+{
+  "today": "2026-05-21",
+  "totals": {
+    "agreements": 1009,
+    "institutions": 706,
+    "departments": 40
+  },
+  "by_status": {
+    "Active": 423,
+    "Auto-renewed": 314,
+    "Pending Approval": 130,
+    "Unknown": 129,
+    "Ended": 10,
+    "Renewal In Progress": 3
+  },
+  "by_type": {
+    "MoU": 508,
+    "MoA": 356,
+    "Unknown": 41,
+    "IA": 104
+  },
+  "by_kind": {
+    "Domestic": 625,
+    "International": 384
+  }
+}
