@@ -1810,6 +1810,7 @@ function renderAdminLayout(content, activePath) {
   const navItems = [
     { href: '/admin',                icon: 'layout-dashboard', label: 'Dashboard' },
     { href: '/admin/agreements',     icon: 'file-text',        label: 'Agreements' },
+    { href: '/admin/drafts',         icon: 'archive',          label: 'Draft Documents' },
     { href: '/admin/agreements/new', icon: 'plus-circle',      label: 'New Agreement' },
     { href: '/admin/archive',        icon: 'library',          label: 'Partnership Catalog' },
     { href: '/admin/analytics',      icon: 'bar-chart-3',      label: 'Analytics' },
@@ -2004,7 +2005,7 @@ function viewAdminDashboard() {
                 <div class="text-sm font-semibold text-slate-900 dark:text-white truncate">${escapeHtml(f.name)}</div>
                 <div class="text-xs text-slate-500 truncate">${escapeHtml(a.code)} · ${escapeHtml(a.title)}</div>
               </a>
-            </li>`).join('')}</ul>` : '<p class="text-sm text-slate-500">No draft documents in progress.</p>',
+            </li>`).join('')}</ul><div class="mt-3 text-right"><a href="#/admin/drafts" class="text-sm font-semibold text-brand-600 hover:underline">View all drafts →</a></div>` : '<p class="text-sm text-slate-500">No draft documents in progress.</p>',
         })}
       </div>
     </div>
@@ -3111,6 +3112,163 @@ function simulateUpload(agreementId) {
 
 /* ============================ Archive Library (Admin) ==================== */
 
+function viewDraftDocuments() {
+  const allDrafts = () => Store.state.agreements.flatMap((a) => (a.files || []).filter((f) => isDocumentDraft(f)).map((f) => ({ agreement: a, document: f })));
+  const users = Store.state.users;
+  const institutions = Store.state.institutions;
+  const ownerOptions = users.map((u) => `<option value="${u.id}">${escapeHtml(u.name)}</option>`).join('');
+  const partnerOptions = institutions.map((inst) => `<option value="${inst.id}">${escapeHtml(inst.name)}</option>`).join('');
+
+  const content = `
+    <div class="flex items-center justify-between flex-wrap gap-3 mb-5">
+      <div>
+        <h1 class="text-2xl font-bold">Draft Documents</h1>
+        <p class="text-sm text-slate-500 mt-1">Track in-progress document drafts and Google Drive references across agreements.</p>
+      </div>
+      <div class="flex items-center gap-2">
+        <a href="#/admin/agreements/new" class="inline-flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-lg text-sm font-semibold">
+          <i data-lucide="plus" class="w-4 h-4"></i> New Agreement
+        </a>
+      </div>
+    </div>
+    <div class="grid gap-3 md:grid-cols-[1.3fr_auto] mb-4">
+      <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div>
+          <label class="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2" for="dr-q">Search</label>
+          <input id="dr-q" type="search" placeholder="Title, agreement, partner..." class="w-full h-11 px-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm" />
+        </div>
+        <div>
+          <label class="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2" for="dr-status">Draft status</label>
+          <select id="dr-status" class="w-full h-11 px-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm">
+            <option value="">All statuses</option>
+            ${DOCUMENT_STATUSES.map((status) => `<option value="${escapeHtml(status)}">${escapeHtml(status)}</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2" for="dr-doc-type">Document type</label>
+          <select id="dr-doc-type" class="w-full h-11 px-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm">
+            <option value="">All types</option>
+            ${DOCUMENT_TYPES.map((type) => `<option value="${escapeHtml(type)}">${escapeHtml(type)}</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2" for="dr-owner">Document owner</label>
+          <select id="dr-owner" class="w-full h-11 px-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm">
+            <option value="">All owners</option>
+            ${ownerOptions}
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2" for="dr-partner">Partner</label>
+          <select id="dr-partner" class="w-full h-11 px-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm">
+            <option value="">All partners</option>
+            ${partnerOptions}
+          </select>
+        </div>
+      </div>
+      <div class="flex items-end justify-end">
+        <button id="dr-clear" class="h-11 px-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 text-sm font-semibold hover:bg-slate-50 dark:hover:bg-slate-800">Clear filters</button>
+      </div>
+    </div>
+    ${UI.card({
+      title: 'Draft Document Summary',
+      subtitle: `${allDrafts().length} active draft document${allDrafts().length === 1 ? '' : 's'}`,
+      body: `
+        <div class="overflow-x-auto">
+          <table class="min-w-full text-sm">
+            <thead class="bg-slate-50 dark:bg-slate-900/70 text-xs uppercase tracking-wider text-slate-500">
+              <tr>
+                <th class="text-left px-4 py-3">Document</th>
+                <th class="text-left px-4 py-3">Agreement</th>
+                <th class="text-left px-4 py-3">Partner</th>
+                <th class="text-left px-4 py-3">Status</th>
+                <th class="text-left px-4 py-3">Owner</th>
+                <th class="text-left px-4 py-3">Due</th>
+                <th class="text-left px-4 py-3">Type</th>
+                <th class="text-right px-4 py-3">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="dr-table-body"></tbody>
+          </table>
+        </div>
+      `,
+    })}
+  `;
+
+  renderAdminLayout(content, '/admin/drafts');
+  refreshIcons();
+
+  const buildRow = ({ agreement: a, document: f }) => {
+    const inst = findInstitution(a.institutionId);
+    const owner = findUser(f.ownerUserId);
+    return `
+      <tr class="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800">
+        <td class="px-4 py-3 max-w-[220px]"><div class="font-semibold text-slate-900 dark:text-white truncate">${escapeHtml(f.name)}</div><div class="text-xs text-slate-500 truncate">${escapeHtml(f.notes || '')}</div></td>
+        <td class="px-4 py-3"><a href="#/admin/agreements/${a.id}" class="font-medium text-brand-600 hover:underline truncate block max-w-[220px]">${escapeHtml(a.code)} · ${escapeHtml(a.title)}</a></td>
+        <td class="px-4 py-3 text-slate-600 dark:text-slate-300 truncate">${escapeHtml(inst?.name || '—')}</td>
+        <td class="px-4 py-3"><span class="pill ${pillClass(f.draftStatus)}">${escapeHtml(f.draftStatus)}</span></td>
+        <td class="px-4 py-3 text-slate-600 dark:text-slate-300">${escapeHtml(owner?.name || '—')}</td>
+        <td class="px-4 py-3 text-slate-600 dark:text-slate-300">${f.dueDate ? fmtDate(f.dueDate) : '—'}</td>
+        <td class="px-4 py-3 text-slate-600 dark:text-slate-300">${escapeHtml(f.docType)}</td>
+        <td class="px-4 py-3 text-right">
+          ${f.externalLink ? `<button data-open-link="${f.id}" class="inline-flex items-center gap-2 px-3 py-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200">Open link</button>` : ''}
+        </td>
+      </tr>`;
+  };
+
+  const computeFilteredDrafts = () => {
+    const query = ($('#dr-q').value || '').trim().toLowerCase();
+    const status = $('#dr-status').value;
+    const docType = $('#dr-doc-type').value;
+    const ownerId = $('#dr-owner').value;
+    const partnerId = $('#dr-partner').value;
+    return allDrafts().filter(({ agreement: a, document: f }) => {
+      const inst = findInstitution(a.institutionId);
+      const matchesQuery = !query || [f.name, f.notes, a.title, a.code, inst?.name].filter(Boolean).join(' ').toLowerCase().includes(query);
+      const matchesStatus = !status || f.draftStatus === status;
+      const matchesType = !docType || f.docType === docType;
+      const matchesOwner = !ownerId || f.ownerUserId === ownerId;
+      const matchesPartner = !partnerId || a.institutionId === partnerId;
+      return matchesQuery && matchesStatus && matchesType && matchesOwner && matchesPartner;
+    });
+  };
+
+  const renderDraftTable = () => {
+    const data = computeFilteredDrafts();
+    const tbody = $('#dr-table-body');
+    if (!tbody) return;
+    tbody.innerHTML = data.length ? data.map(buildRow).join('') : `
+      <tr>
+        <td colspan="8" class="px-4 py-8 text-center text-sm text-slate-500">No matching draft documents found. Adjust your filters or add a new document in an agreement detail page.</td>
+      </tr>`;
+    $$('[data-open-link]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const fid = button.getAttribute('data-open-link');
+        const entry = allDrafts().find(({ document: f }) => f.id === fid);
+        if (entry?.document?.externalLink) window.open(entry.document.externalLink, '_blank', 'noopener');
+      });
+    });
+  };
+
+  const updateDrafts = () => renderDraftTable();
+  ['dr-q', 'dr-status', 'dr-doc-type', 'dr-owner', 'dr-partner'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', updateDrafts);
+  });
+  const searchInput = document.getElementById('dr-q');
+  if (searchInput) searchInput.addEventListener('input', debounce(updateDrafts, 150));
+  const clearButton = document.getElementById('dr-clear');
+  if (clearButton) clearButton.addEventListener('click', () => {
+    ['dr-q', 'dr-status', 'dr-doc-type', 'dr-owner', 'dr-partner'].forEach((id) => {
+      const field = document.getElementById(id);
+      if (field) field.value = '';
+    });
+    updateDrafts();
+  });
+
+  renderDraftTable();
+}
+
 function viewArchiveLibrary() {
   const archived = Store.state.agreements.filter((a) => ARCHIVE_STATUSES.includes(a.status));
   let page = 1;
@@ -3645,6 +3803,7 @@ Router.add(/^\/admin\/agreements(\?.*)?$/,                () => viewAgreementLis
 Router.add('/admin/agreements/new',                       () => viewAgreementForm({}),   { requireAuth: true });
 Router.add(/^\/admin\/agreements\/(?<id>[^/]+)\/edit$/,   (p) => viewAgreementForm(p),   { requireAuth: true });
 Router.add(/^\/admin\/agreements\/(?<id>[^/]+)$/,         (p) => viewAgreementDetail(p), { requireAuth: true });
+Router.add('/admin/drafts',                               () => viewDraftDocuments(),    { requireAuth: true });
 Router.add('/admin/archive',                              () => viewArchiveLibrary(),    { requireAuth: true });
 Router.add('/admin/analytics',                            () => viewAdminAnalytics(),    { requireAuth: true });
 Router.add('/admin/users',                                () => viewUsers(),             { requireAuth: true });

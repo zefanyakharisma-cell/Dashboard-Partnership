@@ -47,6 +47,7 @@ A responsive web dashboard for managing Petra Christian University's (Universita
 - **Auto-Archive** — when status reaches a terminal/signed state the record automatically appears in the Library
 - **Document drafting tracker** with file metadata, Google Drive link support, and inline partner creation while adding a new document entry
 - **Draft document filtering** in the agreement list so you can find agreements with active drafting work quickly, including owner-based filtering
+- **Dedicated draft documents page** for tracking active draft work and Google Drive references across all agreements, with search and filter controls
 - **Document upload** (simulated; production-ready hook point for Supabase Storage / S3)
 - **Archive Library** with advanced search
 - **Analytics & Reports** with multiple chart types
