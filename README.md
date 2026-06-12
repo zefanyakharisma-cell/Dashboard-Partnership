@@ -45,6 +45,8 @@ A responsive web dashboard for managing Petra Christian University's (Universita
 - **Workflow Engine** — Drafting → Internal Review → Legal Review → Partner Review → Waiting Signature → Signed → Completed → Archived
 - **Lifecycle Statuses** — Active, Auto-renewed, Open-ended, Pending Approval, Renewal In Progress, Ended, Expired, Unknown (mapped from the source dataset)
 - **Auto-Archive** — when status reaches a terminal/signed state the record automatically appears in the Library
+- **Document drafting tracker** with file metadata, Google Drive link support, and inline partner creation while adding a new document entry
+- **Draft document filtering** in the agreement list so you can find agreements with active drafting work quickly, including owner-based filtering
 - **Document upload** (simulated; production-ready hook point for Supabase Storage / S3)
 - **Archive Library** with advanced search
 - **Analytics & Reports** with multiple chart types

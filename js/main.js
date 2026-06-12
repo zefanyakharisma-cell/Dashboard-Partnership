@@ -56,6 +56,10 @@ const INSTITUTION_TYPES = ['education', 'industry', 'organization', 'government'
 const SCOPES = ['learning', 'research', 'student_affairs', 'community_service'];
 const titleCase = (s) => String(s || '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
+const DOCUMENT_TYPES = ['Contract Draft', 'Review Notes', 'Signed PDF', 'Annex', 'Other'];
+const DOCUMENT_STATUSES = ['Drafting', 'Internal Review', 'Partner Review', 'Finalized'];
+const isDocumentDraft = (doc) => !!doc?.draftStatus && doc.draftStatus !== 'Finalized';
+
 const isLifecycleStatus = (s) => LIFECYCLE_STATUSES.includes(s);
 const isLiveAgreement  = (s) => ['Active', 'Auto-renewed', 'Open-ended', 'Signed', 'Completed'].includes(s);
 
@@ -1903,6 +1907,8 @@ function viewAdminDashboard() {
   const total = ags.length;
   const active = ags.filter((a) => isLiveAgreement(a.status)).length;
   const underReview = ags.filter((a) => IN_PROGRESS_STATUSES.includes(a.status)).length;
+  const draftDocuments = ags.flatMap((a) => (a.files || []).filter((f) => isDocumentDraft(f)).map((f) => ({ a, f })));
+  const draftCount = draftDocuments.length;
   const autoRenewed = ags.filter((a) => a.status === 'Auto-renewed').length;
   const completed = ags.filter((a) => ['Signed', 'Completed', 'Archived', 'Ended', 'Expired'].includes(a.status)).length;
   const expiring = ags.filter((a) => {
@@ -1943,11 +1949,7 @@ function viewAdminDashboard() {
       ${UI.kpiCard({ label: 'Total', value: total, icon: 'file-text', tone: 'brand' })}
       ${UI.kpiCard({ label: 'Active', value: active, icon: 'activity', tone: 'sky' })}
       ${UI.kpiCard({ label: 'Pending', value: underReview, icon: 'scan-search', tone: 'amber' })}
-      ${UI.kpiCard({ label: 'Auto-renewed', value: autoRenewed, icon: 'repeat', tone: 'violet' })}
-      ${UI.kpiCard({ label: 'Signed / Closed', value: completed, icon: 'badge-check', tone: 'emerald' })}
-      ${UI.kpiCard({ label: 'Expiring ≤90d', value: expiring.length, icon: 'alarm-clock', tone: 'rose' })}
-    </div>
-
+      ${UI.kpiCard({ label: 'Draft docs', value: draftCount, icon: 'file-text', tone: 'violet' })}
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
       <div class="lg:col-span-2 space-y-6">
         ${UI.card({
@@ -1992,6 +1994,17 @@ function viewAdminDashboard() {
                 <i data-lucide="chevron-right" class="w-4 h-4 text-slate-400"></i>
               </a>
             </li>`).join('')}</ul>` : UI.empty({ icon: 'user-check', title: 'No agreements assigned' }),
+        })}
+        ${UI.card({
+          title: 'Current Draft Documents',
+          subtitle: `${draftCount} document${draftCount === 1 ? '' : 's'} in progress`,
+          body: draftCount ? `<ul class="space-y-2">${draftDocuments.slice(0, 5).map(({ a, f }) => `
+            <li>
+              <a href="#/admin/agreements/${a.id}" class="block p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 border border-transparent hover:border-slate-200 dark:hover:border-slate-800">
+                <div class="text-sm font-semibold text-slate-900 dark:text-white truncate">${escapeHtml(f.name)}</div>
+                <div class="text-xs text-slate-500 truncate">${escapeHtml(a.code)} · ${escapeHtml(a.title)}</div>
+              </a>
+            </li>`).join('')}</ul>` : '<p class="text-sm text-slate-500">No draft documents in progress.</p>',
         })}
       </div>
     </div>
@@ -2134,6 +2147,15 @@ function viewAgreementList() {
           <option value="yes">New partners</option>
           <option value="no">Returning partners</option>
         </select>
+        <select id="ag-doc-filter" class="h-10 px-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm">
+          <option value="">All document status</option>
+          <option value="hasDraft">Has any draft document</option>
+          ${DOCUMENT_STATUSES.map((s) => `<option value="${s}">${s}</option>`).join('')}
+        </select>
+        <select id="ag-doc-owner" class="h-10 px-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm">
+          <option value="">All document owners</option>
+          ${Store.state.users.filter((u) => u.active).map((u) => `<option value="${u.id}">${escapeHtml(u.name)}</option>`).join('')}
+        </select>
         <button id="ag-clear" type="button" class="h-10 px-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-medium text-slate-600 hover:text-slate-900 dark:text-slate-300">Clear filters</button>
         <select id="ag-sort" class="h-10 px-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm">
           <option value="updated_desc">Recently updated</option>
@@ -2179,6 +2201,8 @@ function viewAgreementList() {
     const itype = $('#ag-itype').value;
     const scope = $('#ag-scope').value;
     const newPartner = $('#ag-newpartner').value;
+    const docFilter = $('#ag-doc-filter').value;
+    const docOwner = $('#ag-doc-owner').value;
     return Store.state.agreements.filter((a) => {
       const inst = findInstitution(a.institutionId);
       const matchesQ = !q || [a.title, a.code, inst?.name, a.description, a.implementingUnit, (a.units || []).join(' '), (a.tags || []).join(' ')].join(' ').toLowerCase().includes(q);
@@ -2192,7 +2216,11 @@ function viewAgreementList() {
       const matchesIType = !itype || agITypes.includes(itype) || instITypes.includes(itype);
       const matchesScope = !scope || a.scope === scope || (a.scopeTags || []).includes(scope);
       const matchesNew = !newPartner || (newPartner === 'yes' ? !!a.newPartner : !a.newPartner);
-      return matchesQ && matchesS && matchesT && matchesK && matchesD && matchesIType && matchesScope && matchesNew;
+      const files = a.files || [];
+      const hasDraftDocument = files.some((f) => isDocumentDraft(f));
+      const matchesDoc = !docFilter || (docFilter === 'hasDraft' ? hasDraftDocument : files.some((f) => f.draftStatus === docFilter));
+      const matchesDocOwner = !docOwner || files.some((f) => f.ownerUserId === docOwner);
+      return matchesQ && matchesS && matchesT && matchesK && matchesD && matchesIType && matchesScope && matchesNew && matchesDoc && matchesDocOwner;
     });
   };
 
@@ -2294,7 +2322,7 @@ function viewAgreementList() {
   };
 
   $('#ag-q').addEventListener('input', debounce(() => { page = 1; render(); }, 150));
-  ['ag-status', 'ag-type', 'ag-kind', 'ag-dept', 'ag-itype', 'ag-scope', 'ag-newpartner', 'ag-sort'].forEach((id) =>
+  ['ag-status', 'ag-type', 'ag-kind', 'ag-dept', 'ag-itype', 'ag-scope', 'ag-newpartner', 'ag-doc-filter', 'ag-doc-owner', 'ag-sort'].forEach((id) =>
     $(`#${id}`).addEventListener('change', () => { page = 1; render(); }),
   );
   $('#ag-clear').addEventListener('click', () => {
@@ -2429,23 +2457,38 @@ function viewAgreementDetail({ id }) {
 
         ${UI.card({
           title: 'Documents',
-          subtitle: `${a.files.length} file(s) attached`,
-          action: `<button data-action="upload" class="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md text-xs font-semibold"><i data-lucide="upload" class="w-3.5 h-3.5"></i>Upload</button>`,
-          body: a.files.length ? `<ul class="divide-y divide-slate-100 dark:divide-slate-800">${a.files.map((f) => `
-            <li class="py-2.5 flex items-center justify-between gap-3">
-              <div class="flex items-center gap-3 min-w-0">
-                <div class="w-9 h-9 rounded-lg bg-rose-100 dark:bg-rose-500/15 text-rose-700 dark:text-rose-300 flex items-center justify-center shrink-0"><i data-lucide="file-text" class="w-4 h-4"></i></div>
-                <div class="min-w-0">
-                  <div class="text-sm font-semibold truncate">${escapeHtml(f.name)}</div>
-                  <div class="text-xs text-slate-500">${f.size.toFixed(2)} MB · uploaded ${fmtDate(f.uploadedAt)}</div>
+          subtitle: `${(a.files || []).length} document${(a.files || []).length === 1 ? '' : 's'} on record`,
+          action: `<button data-action="upload" class="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md text-xs font-semibold"><i data-lucide="plus" class="w-3.5 h-3.5"></i>Add document</button>`,
+          body: (a.files || []).length ? `<ul class="divide-y divide-slate-100 dark:divide-slate-800">${a.files.map((f) => {
+            const owner = findUser(f.ownerUserId);
+            return `
+            <li class="py-3 flex flex-col gap-3">
+              <div class="flex items-start justify-between gap-3">
+                <div class="flex items-center gap-3 min-w-0">
+                  <div class="w-10 h-10 rounded-lg bg-rose-100 dark:bg-rose-500/15 text-rose-700 dark:text-rose-300 flex items-center justify-center shrink-0"><i data-lucide="file-text" class="w-4 h-4"></i></div>
+                  <div class="min-w-0">
+                    <div class="flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
+                      <span class="truncate max-w-[260px]">${escapeHtml(f.name)}</span>
+                      <span class="text-[10px] font-semibold px-2 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">${escapeHtml(f.docType || (f.kind === 'link' ? 'Link' : 'File'))}</span>
+                      ${f.draftStatus ? `<span class="text-[10px] font-semibold px-2 py-1 rounded-full ${pillClass(f.draftStatus)}">${escapeHtml(f.draftStatus)}</span>` : ''}
+                    </div>
+                    <div class="mt-1 text-xs text-slate-500 dark:text-slate-400 space-y-1">
+                      ${owner ? `<div>Owner: ${escapeHtml(owner.name)}</div>` : ''}
+                      ${f.dueDate ? `<div>Due: ${fmtDate(f.dueDate)}</div>` : ''}
+                      ${f.kind === 'upload' ? `<div>${f.size?.toFixed(2)} MB · attached ${fmtDate(f.uploadedAt)}</div>` : `<div>Added ${fmtDate(f.uploadedAt)}</div>`}
+                      ${f.externalLink ? `<div class="truncate">Link: <a href="${escapeHtml(f.externalLink)}" target="_blank" rel="noreferrer" class="text-brand-600 hover:underline">${escapeHtml(f.externalLink)}</a></div>` : ''}
+                      ${f.notes ? `<div>${escapeHtml(f.notes)}</div>` : ''}
+                    </div>
+                  </div>
+                </div>
+                <div class="flex items-center gap-1">
+                  ${f.externalLink ? `<button data-open-link="${f.id}" class="p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600" title="Open link"><i data-lucide="external-link" class="w-4 h-4"></i></button>` : ''}
+                  ${f.kind === 'upload' ? `<button data-preview="${f.id}" class="p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600" title="Preview"><i data-lucide="eye" class="w-4 h-4"></i></button><button data-download="${f.id}" class="p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600" title="Download"><i data-lucide="download" class="w-4 h-4"></i></button>` : ''}
+                  <button data-delete-file="${f.id}" class="p-1.5 rounded-md hover:bg-rose-50 dark:hover:bg-rose-500/10 text-rose-600" title="Delete"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
                 </div>
               </div>
-              <div class="flex items-center gap-1">
-                <button data-preview="${f.id}" class="p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600" title="Preview"><i data-lucide="eye" class="w-4 h-4"></i></button>
-                <button data-download="${f.id}" class="p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600" title="Download"><i data-lucide="download" class="w-4 h-4"></i></button>
-                <button data-delete-file="${f.id}" class="p-1.5 rounded-md hover:bg-rose-50 dark:hover:bg-rose-500/10 text-rose-600" title="Delete"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
-              </div>
-            </li>`).join('')}</ul>` : UI.empty({ icon: 'file-plus', title: 'No documents yet', message: 'Upload PDFs or contract drafts.' }),
+            </li>`;
+          }).join('')}</ul>` : UI.empty({ icon: 'file-plus', title: 'No documents yet', message: 'Add a draft document or link a Google Drive file.' }),
         })}
 
         ${UI.card({
@@ -2531,6 +2574,11 @@ function viewAgreementDetail({ id }) {
     const f = a.files.find((x) => x.id === fid);
     downloadFile(f.name + '.txt', `[Demo file content for ${f.name}]\nAgreement: ${a.title}\nCode: ${a.code}`, 'text/plain');
     Toast.show('Demo download started.', 'success');
+  }));
+  $$('[data-open-link]').forEach((b) => b.addEventListener('click', () => {
+    const fid = b.getAttribute('data-open-link');
+    const f = a.files.find((x) => x.id === fid);
+    if (f?.externalLink) window.open(f.externalLink, '_blank', 'noopener');
   }));
   $$('[data-delete-file]').forEach((b) => b.addEventListener('click', async () => {
     const fid = b.getAttribute('data-delete-file');
@@ -2878,34 +2926,185 @@ function viewAgreementForm({ id } = {}) {
 
 function simulateUpload(agreementId) {
   const a = findAgreement(agreementId);
+  const currentPartner = findInstitution(a.institutionId);
   Modal.open({
-    title: 'Upload Document',
+    title: 'Add document entry',
+    size: 'lg',
     body: `
-      <div class="p-6 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl text-center">
-        <i data-lucide="cloud-upload" class="w-10 h-10 text-slate-400 mx-auto mb-2"></i>
-        <p class="text-sm text-slate-600 dark:text-slate-300">Drop PDF here or click to browse</p>
-        <input id="file-input" type="file" accept="application/pdf,image/*" class="mt-3 text-xs" />
-      </div>
-      <p class="text-xs text-slate-500 mt-3">Demo only — file is not actually stored. In production this would upload to Supabase Storage or S3.</p>`,
+      <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        <div class="space-y-4">
+          <div>
+            <label class="block text-xs font-semibold mb-1.5">Partner Institution *</label>
+            <div id="doc-cb-partner">${Combobox.render({ name: 'partnerId', value: a.institutionId || '', required: true, placeholder: 'Search partner or add new…' })}</div>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold mb-1.5">Document title *</label>
+            <input name="docName" class="w-full h-10 px-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm" placeholder="e.g. Draft MoU v1" />
+          </div>
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="block text-xs font-semibold mb-1.5">Document type</label>
+              <select name="docType" class="w-full h-10 px-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm">
+                ${DOCUMENT_TYPES.map((t) => `<option value="${t}">${t}</option>`).join('')}
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-semibold mb-1.5">Draft status</label>
+              <select name="draftStatus" class="w-full h-10 px-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm">
+                ${DOCUMENT_STATUSES.map((s) => `<option value="${s}">${s}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold mb-1.5">Owner</label>
+            <select name="ownerUserId" class="w-full h-10 px-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm">
+              ${Store.state.users.filter((u) => u.active).map((u) => `<option value="${u.id}" ${u.id === Auth.current.id ? 'selected' : ''}>${escapeHtml(u.name)} (${escapeHtml(u.role)})</option>`).join('')}
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold mb-1.5">Due date</label>
+            <input type="date" name="dueDate" class="w-full h-10 px-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm" />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold mb-1.5">Notes</label>
+            <textarea name="docNotes" rows="3" class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm" placeholder="Review feedback, next steps, or Google Drive file details"></textarea>
+          </div>
+        </div>
+        <div class="space-y-4">
+          <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+            <h3 class="text-sm font-semibold mb-3">File upload</h3>
+            <div class="p-4 border border-dashed border-slate-300 dark:border-slate-700 rounded-xl text-center">
+              <i data-lucide="cloud-upload" class="w-10 h-10 text-slate-400 mx-auto mb-2"></i>
+              <p class="text-sm text-slate-600 dark:text-slate-300">Choose a local file to attach as a document draft.</p>
+              <input id="doc-file-input" type="file" accept="application/pdf,image/*" class="mt-3 text-xs w-full text-slate-700 dark:text-slate-200" />
+            </div>
+          </div>
+          <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+            <h3 class="text-sm font-semibold mb-3">Google Drive link</h3>
+            <input name="externalLink" placeholder="https://drive.google.com/..." class="w-full h-10 px-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm" />
+            <p class="mt-2 text-xs text-slate-500">Use this when the document is stored in Drive instead of uploading a file.</p>
+          </div>
+        </div>
+      </div>`,
     actions: [
       { label: 'Cancel', variant: 'secondary' },
-      { label: 'Upload', variant: 'primary', onClick: () => {
-        const fileEl = $('#file-input');
-        const file = fileEl.files[0];
-        if (!file) { Toast.show('No file selected.', 'error'); return false; }
-        a.files.push({
-          id: uid('f'),
-          name: file.name,
-          size: file.size / (1024 * 1024),
-          uploadedAt: new Date().toISOString(),
-        });
-        a.updatedAt = new Date().toISOString();
-        Store.state.activityLogs.unshift({ id: uid('log'), agreementId: a.id, userId: Auth.current.id, action: 'FILE_UPLOAD', message: `Uploaded file "${file.name}"`, at: a.updatedAt });
+      { label: 'Add document', variant: 'primary', onClick: () => {
+        const partnerId = $('#modal-container input[name="partnerId"]').value;
+        const title = $('#modal-container input[name="docName"]').value.trim();
+        const fileEl = $('#modal-container #doc-file-input');
+        const file = fileEl?.files[0];
+        const externalLink = $('#modal-container input[name="externalLink"]').value.trim();
+        const docType = $('#modal-container select[name="docType"]').value;
+        const draftStatus = $('#modal-container select[name="draftStatus"]').value;
+        const ownerUserId = $('#modal-container select[name="ownerUserId"]').value;
+        const dueDate = $('#modal-container input[name="dueDate"]').value;
+        const notes = $('#modal-container textarea[name="docNotes"]').value.trim();
+
+        if (!partnerId) { Toast.show('Please choose or add a partner institution.', 'error'); return false; }
+        if (!title && !file && !externalLink) { Toast.show('Please enter a document title, upload a file, or provide a Drive link.', 'error'); return false; }
+        if (!file && !externalLink) { Toast.show('A file or external link is required.', 'error'); return false; }
+
+        const name = title || (file && file.name) || externalLink;
+        const now = new Date().toISOString();
+        const doc = {
+          id: uid('doc'),
+          name,
+          docType,
+          draftStatus,
+          ownerUserId,
+          dueDate: dueDate ? new Date(dueDate).toISOString() : null,
+          externalLink: externalLink || null,
+          notes,
+          uploadedAt: now,
+          kind: file ? 'upload' : 'link',
+          size: file ? file.size / (1024 * 1024) : 0,
+          fileName: file ? file.name : null,
+        };
+
+        a.files = a.files || [];
+        a.files.unshift(doc);
+        if (partnerId !== a.institutionId) {
+          a.institutionId = partnerId;
+          a.newPartner = true;
+        }
+        a.updatedAt = now;
+        Store.state.activityLogs.unshift({ id: uid('log'), agreementId: a.id, userId: Auth.current.id, action: 'DOC_ADDED', message: `Added document "${name}"`, at: now });
         Store.save();
-        Toast.show('File uploaded (simulated).', 'success');
+        if (window.SUPABASE_CONFIGURED && window.AgreementsRepo) {
+          window.AgreementsRepo.updateAgreement(a.id, a).catch((err) => {
+            console.error('Remote update failed:', err);
+            Toast.show('Saved locally, but failed to sync document changes to server.', 'error');
+          });
+        }
+        Toast.show('Document entry added.', 'success');
         Router.render();
-      }},
+      } },
     ],
+  });
+
+  Combobox.init($('#doc-cb-partner'), {
+    options: Store.state.institutions.map((i) => ({ id: i.id, label: i.name, sublabel: i.country || (i.kind || ''), })),
+    allowAdd: true,
+    addLabel: 'Add new institution',
+    noMatch: 'No institutions match — type a name to add a new one.',
+    onAdd: (name, done) => {
+      if (!name) return;
+      Modal.open({
+        title: 'Add new partner institution',
+        body: `
+          <div class="space-y-3">
+            <div>
+              <label class="block text-xs font-semibold mb-1.5">Name</label>
+              <input id="ni-name" value="${escapeHtml(name)}" class="w-full h-10 px-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm" />
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs font-semibold mb-1.5">Country</label>
+                <input id="ni-country" placeholder="e.g. Indonesia" class="w-full h-10 px-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm" />
+              </div>
+              <div>
+                <label class="block text-xs font-semibold mb-1.5">Kind</label>
+                <select id="ni-kind" class="w-full h-10 px-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm">
+                  <option value="Domestic">Domestic</option>
+                  <option value="International">International</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <label class="block text-xs font-semibold mb-1.5">Type</label>
+              <select id="ni-type" class="w-full h-10 px-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm">
+                ${INSTITUTION_TYPES.map((t) => `<option value="${t}">${titleCase(t)}</option>`).join('')}
+              </select>
+            </div>
+          </div>`,
+        actions: [
+          { label: 'Cancel', variant: 'secondary' },
+          { label: 'Add institution', variant: 'primary', onClick: () => {
+            const nm = $('#ni-name').value.trim();
+            const country = $('#ni-country').value.trim();
+            const kind = $('#ni-kind').value;
+            const itype = $('#ni-type').value;
+            if (!nm) { Toast.show('Institution name is required.', 'error'); return false; }
+            const inst = {
+              id: `inst-custom-${Date.now().toString(36)}`,
+              name: nm,
+              canonical_name: nm,
+              kind,
+              country: country || null,
+              city: null,
+              address: null,
+              institutionTypes: [itype],
+              institution_types: [itype],
+              type: titleCase(itype),
+            };
+            Store.state.institutions.push(inst);
+            Store.save();
+            Toast.show(`Added "${nm}" to the institution list.`, 'success');
+            done({ id: inst.id, label: inst.name, sublabel: inst.country || inst.kind });
+          } },
+        ],
+      });
+    },
   });
   refreshIcons();
 }
